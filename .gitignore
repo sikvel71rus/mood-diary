@@ -1,0 +1,29 @@
+# Environment
+.env
+.env.*
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+
+# Android / Kotlin
+*.iml
+.gradle/
+local.properties
+.idea/
+*.apk
+*.aab
+app/build/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
