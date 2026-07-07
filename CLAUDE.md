@@ -1,32 +1,32 @@
-# Mood Diary — Project Constitution for Claude Code
+# Mood Diary — Конституция проекта для Claude Code
 
-Read `docs/PROJECT_CONTEXT.md` at the start of every session for full context.
-Core artifacts: `docs/hypothesis.md` → `docs/research.md` → `docs/constitution.md` → `docs/spec.md` → `docs/plan.md` → `docs/tasks.md`
+При старте каждой сессии читать `docs/PROJECT_CONTEXT.md` для полного контекста.
+Цепочка источников правды: `docs/hypothesis.md` → `docs/research.md` → `docs/constitution.md` → `docs/spec.md` → `docs/plan.md` → `docs/tasks.md`
 
 ---
 
-## What we're building
-Android app — daily mood diary that detects patterns (primarily sleep↔mood) and gives soft personalized recommendations. Real client, real data from day one.
+## Что строим
+Android-приложение — ежедневный дневник настроения, который выявляет паттерны (в первую очередь связь сна и настроения) и даёт мягкие персональные рекомендации. Реальный клиент, реальные данные с первого дня.
 
-## Tech stack (approved)
-- Backend: **Python** (framework chosen at W3)
-- Frontend: **Android native, Kotlin** + Jetpack Compose (confirm with Nikitka before W3)
-- DB: **PostgreSQL**
-- No paid external APIs
+## Технологический стек (согласован)
+- Бэкенд: **Python** (фреймворк выбирается на W3)
+- Фронтенд: **Android нативный, Kotlin** + Jetpack Compose (подтвердить с Никитой до W3)
+- БД: **PostgreSQL**
+- Платные внешние API — запрещены
 
-## Hard rules
-- Log one entry ≤ 15–20 sec (non-negotiable UX requirement from research)
-- First insight shown after 3–5 entries, not weeks
-- Sleep→mood correlation as first recommendation rule (scientifically proven, no ML needed)
-- Secrets in .env only, never in code
-- No third-party analytics SDKs, no logging personal data in plaintext
+## Жёсткие правила
+- Лог одной записи ≤15–20 секунд (ключевое требование из research.md, не обсуждается)
+- Первый инсайт показывается после 3–5 записей, а не через недели
+- Корреляция сон–настроение как первое правило рекомендаций (научно доказано, ML не нужен)
+- Секреты только в .env, никогда в коде
+- Нет сторонних аналитических SDK, нет логирования персональных данных в открытом виде
 
-## Out of scope (MVP)
-External tracker integrations, push notifications, full ML, specialist consultations, web version.
+## Вне скопа MVP
+Интеграции с внешними трекерами, push-уведомления, полноценный ML, консультации специалистов, веб-версия.
 
-## Agent autonomy
-**Can do independently:** write/refactor backend and frontend code within agreed stack and MVP scope, add tests, propose minor technical decisions.
-**Must ask before:** changing stack (language, DB, framework), going outside MVP scope, any decision affecting user data privacy.
+## Границы автономности агента
+**Может сам:** писать и рефакторить код бэкенда и фронтенда в рамках согласованного стека и MVP-скопа, добавлять тесты, предлагать мелкие технические решения.
+**Должен спросить перед:** сменой стека (язык, БД, фреймворк), выходом за скоп MVP, любым решением, затрагивающим приватность данных пользователя.
 
-## Current stage
-W1 Discovery ✅ → **W2 Specify** (spec.md due 15.07.2026) → W3 Plan (22.07) → W4 Implement (29.07)
+## Текущий этап
+W1 Discovery ✅ → **W2 Specify** (spec.md, дедлайн 15.07.2026) → W3 Plan (22.07) → W4 Implement (29.07)
