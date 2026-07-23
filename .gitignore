@@ -21,8 +21,16 @@ local.properties
 .idea/
 *.apk
 *.aab
+*.ap_
 app/build/
 build/
+.cxx/
+captures/
+externalNativeBuild/
+
+# Gradle generated outputs
+**/build/
+**/.gradle/
 
 # OS
 .DS_Store
