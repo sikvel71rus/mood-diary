@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
+import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Canvas
@@ -53,8 +54,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -66,7 +65,6 @@ import org.json.JSONObject
 import java.io.File
 import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.abs
@@ -365,91 +363,128 @@ private fun MoodDiaryApp(store: LocalMoodStore) {
         entries = store.entries()
     }
 
+    fun goHome() {
+        editingEntry = null
+        selectedHistoryEntry = null
+        screen = Screen.Home
+    }
+
+    BackHandler(enabled = screen != Screen.Onboarding && screen != Screen.Home) {
+        goHome()
+    }
+
     MoodDiaryTheme {
-        when (screen) {
-            Screen.Onboarding -> OnboardingScreen(
+        if (screen == Screen.Onboarding) {
+            OnboardingScreen(
                 onStart = {
                     store.markDisclaimerShown()
                     editingEntry = entries.firstOrNull { it.date == LocalDate.now() }
                     screen = Screen.CheckIn
                 },
             )
+        } else {
+            Scaffold(
+                containerColor = MoodColors.Background,
+                bottomBar = {
+                    BottomNav(
+                        activeScreen = activeNavScreen(screen),
+                        onHome = ::goHome,
+                        onHistory = {
+                            editingEntry = null
+                            selectedHistoryEntry = null
+                            screen = Screen.History
+                        },
+                        onSettings = {
+                            editingEntry = null
+                            selectedHistoryEntry = null
+                            screen = Screen.Settings
+                        },
+                    )
+                },
+            ) { rootPadding ->
+                Box(modifier = Modifier.padding(rootPadding)) {
+                    when (screen) {
+                        Screen.Onboarding -> Unit
 
-            Screen.Home -> HomeScreen(
-                entries = entries,
-                onCheckIn = {
-                    editingEntry = entries.firstOrNull { it.date == LocalDate.now() }
-                    screen = Screen.CheckIn
-                },
-                onHistory = { screen = Screen.History },
-                onInsight = {
-                    store.logInsightOpened()
-                    screen = Screen.Insight
-                },
-                onSettings = { screen = Screen.Settings },
-            )
+                        Screen.Home -> HomeScreen(
+                            entries = entries,
+                            onCheckIn = {
+                                editingEntry = entries.firstOrNull { it.date == LocalDate.now() }
+                                screen = Screen.CheckIn
+                            },
+                            onInsight = {
+                                store.logInsightOpened()
+                                screen = Screen.Insight
+                            },
+                        )
 
-            Screen.CheckIn -> CheckInScreen(
-                entry = editingEntry,
-                onSave = {
-                    store.save(it)
-                    refresh()
-                    editingEntry = null
-                    screen = Screen.Home
-                },
-                onBack = {
-                    editingEntry = null
-                    screen = Screen.Home
-                },
-            )
+                        Screen.CheckIn -> CheckInScreen(
+                            entry = editingEntry,
+                            onSave = {
+                                store.save(it)
+                                refresh()
+                                goHome()
+                            },
+                            onBack = ::goHome,
+                        )
 
-            Screen.History -> HistoryScreen(
-                entries = entries,
-                selectedEntry = selectedHistoryEntry,
-                onSelect = { selectedHistoryEntry = it },
-                onCreate = {
-                    editingEntry = entries.firstOrNull { entry -> entry.date == LocalDate.now() }
-                    selectedHistoryEntry = null
-                    screen = Screen.CheckIn
-                },
-                onEdit = {
-                    editingEntry = it
-                    selectedHistoryEntry = null
-                    screen = Screen.CheckIn
-                },
-                onDelete = {
-                    store.deleteEntry(it.id)
-                    refresh()
-                    selectedHistoryEntry = null
-                },
-                onBack = {
-                    selectedHistoryEntry = null
-                    screen = Screen.Home
-                },
-            )
+                        Screen.History -> HistoryScreen(
+                            entries = entries,
+                            selectedEntry = selectedHistoryEntry,
+                            onSelect = { selectedHistoryEntry = it },
+                            onCreate = {
+                                editingEntry = entries.firstOrNull { entry -> entry.date == LocalDate.now() }
+                                selectedHistoryEntry = null
+                                screen = Screen.CheckIn
+                            },
+                            onEdit = {
+                                editingEntry = it
+                                selectedHistoryEntry = null
+                                screen = Screen.CheckIn
+                            },
+                            onDelete = {
+                                store.deleteEntry(it.id)
+                                refresh()
+                                selectedHistoryEntry = null
+                            },
+                            onBack = ::goHome,
+                        )
 
-            Screen.Insight -> InsightScreen(
-                insight = calculateInsight(entries),
-                recommendation = recommendationFor(calculateInsight(entries)),
-                onFeedback = {
-                    store.saveFeedback(it)
-                },
-                onBack = { screen = Screen.Home },
-            )
+                        Screen.Insight -> {
+                            val insight = calculateInsight(entries)
+                            InsightScreen(
+                                insight = insight,
+                                recommendation = recommendationFor(insight),
+                                onFeedback = {
+                                    store.saveFeedback(it)
+                                },
+                                onBack = ::goHome,
+                            )
+                        }
 
-            Screen.Settings -> SettingsScreen(
-                onBack = { screen = Screen.Home },
-                onExport = { store.shareStats() },
-                onDeleteAll = {
-                    store.clearAll()
-                    refresh()
-                    selectedHistoryEntry = null
-                    editingEntry = null
-                    screen = Screen.Onboarding
-                },
-            )
+                        Screen.Settings -> SettingsScreen(
+                            onBack = ::goHome,
+                            onExport = { store.shareStats() },
+                            onDeleteAll = {
+                                store.clearAll()
+                                refresh()
+                                selectedHistoryEntry = null
+                                editingEntry = null
+                                screen = Screen.Onboarding
+                            },
+                        )
+                    }
+                }
+            }
         }
     }
+}
+
+private fun activeNavScreen(screen: Screen): Screen = when (screen) {
+    Screen.CheckIn -> Screen.Home
+    Screen.Insight -> Screen.Home
+    Screen.Onboarding -> Screen.Home
+    else -> screen
 }
 
 @Composable
@@ -474,7 +509,7 @@ private fun OnboardingScreen(onStart: () -> Unit) {
                     .padding(20.dp),
                 onClick = onStart,
             ) {
-                Text("Начать")
+                Text("Сделать первую отметку")
             }
         },
     ) { padding ->
@@ -483,19 +518,38 @@ private fun OnboardingScreen(onStart: () -> Unit) {
                 .padding(padding)
                 .padding(24.dp)
                 .fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Text("Mood Diary", fontSize = 34.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(16.dp))
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(CircleShape)
+                    .background(MoodColors.Accent.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("✦", color = MoodColors.Accent, fontSize = 32.sp)
+            }
+            Spacer(Modifier.height(20.dp))
             Text(
-                "Быстрый дневник настроения: 5 коротких оценок, теги дня и первые бережные наблюдения о связи сна и настроения.",
+                "Mood Diary",
+                color = MoodColors.Text,
+                fontSize = 36.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Короткий дневник, который помогает заметить, как сон и события дня связаны с настроением.",
+                color = MoodColors.Muted,
                 fontSize = 17.sp,
                 lineHeight = 24.sp,
+                textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(20.dp))
-            InfoCard("Не диагноз и не замена специалиста. Приложение помогает наблюдать за состоянием, но не делает медицинских выводов.")
-            Spacer(Modifier.height(12.dp))
-            InfoCard("Данные хранятся только на устройстве. Регистрация и интернет для P0 не нужны.")
+            InfoCard("Каждый день — пять быстрых оценок и несколько тегов контекста. Первые осторожные наблюдения появятся уже после 3–5 записей.")
+            Spacer(Modifier.height(10.dp))
+            InfoCard("Это не диагноз и не замена специалиста. Данные хранятся только на устройстве, без регистрации и аналитики.")
         }
     }
 }
@@ -504,17 +558,12 @@ private fun OnboardingScreen(onStart: () -> Unit) {
 private fun HomeScreen(
     entries: List<Entry>,
     onCheckIn: () -> Unit,
-    onHistory: () -> Unit,
     onInsight: () -> Unit,
-    onSettings: () -> Unit,
 ) {
     val todayEntry = entries.firstOrNull { it.date == LocalDate.now() }
     val insight = calculateInsight(entries)
     Scaffold(
         containerColor = MoodColors.Background,
-        bottomBar = {
-            BottomNav(onHome = {}, onHistory = onHistory, onSettings = onSettings)
-        },
     ) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -558,7 +607,19 @@ private fun CheckInScreen(
     var stress by remember(entry) { mutableStateOf(entry?.stress) }
     var sleep by remember(entry) { mutableStateOf(entry?.sleep) }
     var selectedTags by remember(entry) { mutableStateOf(entry?.tags?.toSet() ?: emptySet()) }
-    val canSave = listOf(mood, energy, anxiety, stress, sleep).all { it != null }
+    val answers = listOf(mood, energy, anxiety, stress, sleep)
+    val firstEmptyStep = answers.indexOfFirst { it == null }.let { if (it == -1) 0 else it }
+    var carouselStep by remember(entry) { mutableStateOf(firstEmptyStep) }
+    val canSave = answers.all { it != null }
+    fun answerForStep(step: Int): Int? = when (step) {
+        0 -> mood
+        1 -> energy
+        2 -> anxiety
+        3 -> stress
+        4 -> sleep
+        else -> null
+    }
+
     Scaffold(
         containerColor = MoodColors.Background,
         topBar = { TopBar(title = if (entry == null) "Check-in" else "Редактирование", onBack = onBack) },
@@ -570,30 +631,89 @@ private fun CheckInScreen(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            RatingRow("Настроение", mood, ScaleKind.Mood) { mood = it }
-            RatingRow("Энергия", energy, ScaleKind.Energy) { energy = it }
-            RatingRow("Тревожность", anxiety, ScaleKind.Anxiety) { anxiety = it }
-            RatingRow("Стресс", stress, ScaleKind.Stress) { stress = it }
-            RatingRow("Сон", sleep, ScaleKind.Sleep) { sleep = it }
-            Text("Контекст дня", fontWeight = FontWeight.SemiBold)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Tags.forEach { tag ->
-                    TagChip(
-                        tag = tag,
-                        selected = tag.id in selectedTags,
-                        onToggle = {
-                            selectedTags = if (tag.id in selectedTags) {
-                                selectedTags - tag.id
-                            } else {
-                                selectedTags + tag.id
+            Text(
+                text = if (carouselStep < 5) "Шкала ${carouselStep + 1} из 5" else "Контекст дня",
+                color = MoodColors.Muted,
+                fontSize = 14.sp,
+            )
+            Card(colors = CardDefaults.cardColors(containerColor = MoodColors.Surface)) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    when (carouselStep) {
+                        0 -> RatingRow("Настроение", mood, ScaleKind.Mood) {
+                            mood = it
+                            carouselStep = 1
+                        }
+                        1 -> RatingRow("Энергия", energy, ScaleKind.Energy) {
+                            energy = it
+                            carouselStep = 2
+                        }
+                        2 -> RatingRow("Тревожность", anxiety, ScaleKind.Anxiety) {
+                            anxiety = it
+                            carouselStep = 3
+                        }
+                        3 -> RatingRow("Стресс", stress, ScaleKind.Stress) {
+                            stress = it
+                            carouselStep = 4
+                        }
+                        4 -> RatingRow("Сон", sleep, ScaleKind.Sleep) {
+                            sleep = it
+                            carouselStep = 5
+                        }
+                        else -> {
+                            Text("Что повлияло на день?", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "Теги необязательны. Выбери то, что поможет потом понять контекст.",
+                                color = MoodColors.Muted,
+                                fontSize = 14.sp,
+                            )
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Tags.forEach { tag ->
+                                    TagChip(
+                                        tag = tag,
+                                        selected = tag.id in selectedTags,
+                                        onToggle = {
+                                            selectedTags = if (tag.id in selectedTags) {
+                                                selectedTags - tag.id
+                                            } else {
+                                                selectedTags + tag.id
+                                            }
+                                        },
+                                    )
+                                }
                             }
+                        }
+                    }
+                }
+            }
+            CarouselDots(activeStep = carouselStep)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    modifier = Modifier.weight(1f),
+                    enabled = carouselStep > 0,
+                    onClick = { carouselStep -= 1 },
+                ) {
+                    Text("Назад")
+                }
+                if (carouselStep < 5) {
+                    Button(
+                        modifier = Modifier.weight(1f),
+                        enabled = answerForStep(carouselStep) != null,
+                        onClick = {
+                            carouselStep += 1
                         },
-                    )
+                    ) {
+                        Text("Дальше")
+                    }
+                } else {
+                    Spacer(Modifier.weight(1f))
                 }
             }
             Button(
                 modifier = Modifier.fillMaxWidth(),
-                enabled = canSave,
+                enabled = canSave && carouselStep == 5,
                 onClick = {
                     onSave(
                         DraftEntry(
@@ -796,17 +916,33 @@ private enum class ScaleKind {
     Sleep,
 }
 
+private data class ScaleOption(
+    val icon: String,
+    val label: String,
+)
+
 @Composable
 private fun RatingRow(
     label: String,
     selected: Int?,
     kind: ScaleKind,
+    enabled: Boolean = true,
     onSelect: (Int) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(label, fontWeight = FontWeight.SemiBold)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(label, fontWeight = FontWeight.SemiBold)
+            selected?.let {
+                Text(scaleLabel(kind, it), color = MoodColors.Accent, fontSize = 13.sp)
+            }
+        }
         Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            (1..5).forEach { value ->
+            valuesForScale(kind).forEach { value ->
+                val option = scaleOption(kind, value)
                 val color = when (kind) {
                     ScaleKind.Mood -> MoodColors.Mood[value] ?: MoodColors.Accent
                     ScaleKind.Sleep -> MoodColors.Sleep[value] ?: MoodColors.Accent
@@ -820,7 +956,7 @@ private fun RatingRow(
                     Modifier
                 }
                 Column(
-                    modifier = Modifier.width(58.dp),
+                    modifier = Modifier.width(64.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
@@ -829,15 +965,40 @@ private fun RatingRow(
                             .size(if (selected == value) 48.dp else 42.dp)
                             .then(selectedModifier)
                             .clip(CircleShape)
-                            .background(color.copy(alpha = 0.34f))
-                            .clickable { onSelect(value) },
+                            .background(color.copy(alpha = if (enabled) 0.34f else 0.12f))
+                            .clickable(enabled = enabled) { onSelect(value) },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(iconFor(kind, value), fontSize = 18.sp)
+                        Text(option.icon, fontSize = 18.sp)
                     }
-                    Text(value.toString(), fontSize = 12.sp, color = MoodColors.Muted)
+                    Text(
+                        option.label,
+                        fontSize = 10.sp,
+                        color = if (enabled) MoodColors.Muted else MoodColors.Muted.copy(alpha = 0.48f),
+                        textAlign = TextAlign.Center,
+                        lineHeight = 11.sp,
+                    )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun CarouselDots(activeStep: Int) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        (0..5).forEach { step ->
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = 4.dp)
+                    .size(if (step == activeStep) 10.dp else 7.dp)
+                    .clip(CircleShape)
+                    .background(if (step == activeStep) MoodColors.Accent else Color(0xFFD8D7D2)),
+            )
         }
     }
 }
@@ -860,15 +1021,32 @@ private fun TagChip(tag: Tag, selected: Boolean, onToggle: () -> Unit) {
 
 @Composable
 private fun ProgressBlock(insight: Insight, entryCount: Int) {
-    val progress = when {
-        entryCount < 3 -> entryCount / 3f
-        entryCount < 5 && insight.status == InsightStatus.Waiting -> entryCount / 5f
+    val target = when {
+        entryCount < 3 -> 3
+        entryCount < 5 && insight.status == InsightStatus.Waiting -> 5
         else -> return
     }
+    val progress = entryCount / target.toFloat()
+    val left = target - entryCount
     Card(colors = CardDefaults.cardColors(containerColor = MoodColors.Surface)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Прогресс до инсайта", fontWeight = FontWeight.SemiBold)
+                Text("$entryCount/$target", color = MoodColors.Accent, fontWeight = FontWeight.SemiBold)
+            }
             LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-            Text(insight.message)
+            Text(
+                if (entryCount < 3) {
+                    "Нужно ещё $left ${recordWord(left)}, чтобы сравнить сон и настроение без поспешных выводов."
+                } else {
+                    "Первый сигнал уже есть. Ещё $left ${recordWord(left)} помогут понять, устойчив ли он."
+                },
+                color = MoodColors.Muted,
+            )
         }
     }
 }
@@ -883,7 +1061,7 @@ private fun InsightCard(insight: Insight, onOpen: () -> Unit) {
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Инсайт", fontWeight = FontWeight.SemiBold)
-            Text(insight.message)
+            Text(insightPreviewText(insight))
             insight.confidenceLabel?.let { Text("Уверенность: $it", color = MoodColors.Muted, fontSize = 13.sp) }
         }
     }
@@ -986,7 +1164,11 @@ private fun HistoryItem(entry: Entry, selected: Boolean, onClick: () -> Unit) {
             Dot(MoodColors.Sleep[entry.sleep] ?: MoodColors.Accent)
             Column(Modifier.weight(1f)) {
                 Text(formatDate(entry.date), fontWeight = FontWeight.SemiBold)
-                Text("Настроение ${entry.mood} · Сон ${entry.sleep}", color = MoodColors.Muted, fontSize = 13.sp)
+                Text(
+                    "Настроение: ${scaleLabel(ScaleKind.Mood, entry.mood)} · Сон: ${scaleLabel(ScaleKind.Sleep, entry.sleep)}",
+                    color = MoodColors.Muted,
+                    fontSize = 13.sp,
+                )
                 if (entry.tags.isNotEmpty()) {
                     Text(entry.tags.mapNotNull { id -> Tags.firstOrNull { it.id == id }?.label }.joinToString(", "), fontSize = 13.sp)
                 }
@@ -1000,7 +1182,11 @@ private fun EntryDetails(entry: Entry, onEdit: () -> Unit, onDelete: () -> Unit)
     Card(colors = CardDefaults.cardColors(containerColor = MoodColors.Surface)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Детали записи", fontWeight = FontWeight.SemiBold)
-            Text("Настроение: ${entry.mood}; энергия: ${entry.energy}; тревожность: ${entry.anxiety}; стресс: ${entry.stress}; сон: ${entry.sleep}")
+            Text("Настроение: ${scaleLabel(ScaleKind.Mood, entry.mood)}")
+            Text("Энергия: ${scaleLabel(ScaleKind.Energy, entry.energy)}")
+            Text("Тревожность: ${scaleLabel(ScaleKind.Anxiety, entry.anxiety)}")
+            Text("Стресс: ${scaleLabel(ScaleKind.Stress, entry.stress)}")
+            Text("Сон: ${scaleLabel(ScaleKind.Sleep, entry.sleep)}")
             Text("Теги: ${entry.tags.mapNotNull { id -> Tags.firstOrNull { it.id == id }?.label }.ifEmpty { listOf("нет") }.joinToString(", ")}")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onEdit) { Text("Редактировать") }
@@ -1011,7 +1197,12 @@ private fun EntryDetails(entry: Entry, onEdit: () -> Unit, onDelete: () -> Unit)
 }
 
 @Composable
-private fun BottomNav(onHome: () -> Unit, onHistory: () -> Unit, onSettings: () -> Unit) {
+private fun BottomNav(
+    activeScreen: Screen,
+    onHome: () -> Unit,
+    onHistory: () -> Unit,
+    onSettings: () -> Unit,
+) {
     Surface(color = MoodColors.Surface) {
         Row(
             modifier = Modifier
@@ -1019,9 +1210,42 @@ private fun BottomNav(onHome: () -> Unit, onHistory: () -> Unit, onSettings: () 
                 .padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            TextButton(modifier = Modifier.weight(1f), onClick = onHome) { Text("Домой") }
-            TextButton(modifier = Modifier.weight(1f), onClick = onHistory) { Text("История") }
-            TextButton(modifier = Modifier.weight(1f), onClick = onSettings) { Text("Настройки") }
+            BottomNavItem(
+                icon = "⌂",
+                selected = activeScreen == Screen.Home,
+                onClick = onHome,
+                modifier = Modifier.weight(1f),
+            )
+            BottomNavItem(
+                icon = "◷",
+                selected = activeScreen == Screen.History,
+                onClick = onHistory,
+                modifier = Modifier.weight(1f),
+            )
+            BottomNavItem(
+                icon = "⚙",
+                selected = activeScreen == Screen.Settings,
+                onClick = onSettings,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun BottomNavItem(
+    icon: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (selected) {
+        Button(modifier = modifier, onClick = onClick) {
+            Text(icon, fontSize = 22.sp)
+        }
+    } else {
+        TextButton(modifier = modifier, onClick = onClick) {
+            Text(icon, fontSize = 22.sp, color = MoodColors.Muted)
         }
     }
 }
@@ -1207,6 +1431,17 @@ private fun recommendationFor(insight: Insight): String? = when (insight.status 
     else -> null
 }
 
+private fun insightPreviewText(insight: Insight): String = when (insight.status) {
+    InsightStatus.NotEnoughData ->
+        "Пока собираем основу: настроение, сон и контекст дня. Инсайт появится после 3 записей."
+    InsightStatus.Waiting ->
+        "Первый сигнал уже можно показать, но для уверенности нужно 5 записей. Открой, чтобы увидеть текущую картину."
+    InsightStatus.Found ->
+        "Есть осторожное наблюдение по твоим последним записям. Открой, чтобы увидеть объяснение и маленькое действие."
+    InsightStatus.NoClearPattern ->
+        "Явной связи между сном и настроением пока не видно. Открой, чтобы понять, что именно проверялось."
+}
+
 private fun secondaryObservationText(observation: SecondaryObservation): String = when (observation.scale to observation.direction) {
     ObservationScale.Energy to ObservationDirection.BetterSleepHigher ->
         "Ещё одно наблюдение: в дни с лучшим сном энергия тоже была заметно выше."
@@ -1225,25 +1460,51 @@ private fun secondaryObservationText(observation: SecondaryObservation): String 
 
 private fun List<Entry>.averageOf(selector: (Entry) -> Int): Double = map(selector).average()
 
-private fun iconFor(kind: ScaleKind, value: Int): String = when (kind) {
+private fun scaleOption(kind: ScaleKind, value: Int): ScaleOption = when (kind) {
     ScaleKind.Mood -> when (value) {
-        5 -> "😊"
-        4 -> "🙂"
-        3 -> "😐"
-        2 -> "😔"
-        else -> "😞"
+        5 -> ScaleOption("😄", "отличное")
+        4 -> ScaleOption("🙂", "хорошее")
+        3 -> ScaleOption("😐", "ровное")
+        2 -> ScaleOption("🙁", "грустное")
+        else -> ScaleOption("😣", "тяжёлое")
+    }
+    ScaleKind.Energy -> when (value) {
+        5 -> ScaleOption("⚡", "заряд")
+        4 -> ScaleOption("🏃", "много")
+        3 -> ScaleOption("🚶", "средне")
+        2 -> ScaleOption("🛋", "мало")
+        else -> ScaleOption("🪫", "нет сил")
+    }
+    ScaleKind.Anxiety -> when (value) {
+        5 -> ScaleOption("❗", "очень")
+        4 -> ScaleOption("🌀", "сильная")
+        3 -> ScaleOption("💭", "заметная")
+        2 -> ScaleOption("🌿", "лёгкая")
+        else -> ScaleOption("🧘", "спокойно")
+    }
+    ScaleKind.Stress -> when (value) {
+        5 -> ScaleOption("🧨", "предел")
+        4 -> ScaleOption("🧱", "перегруз")
+        3 -> ScaleOption("📌", "нагрузка")
+        2 -> ScaleOption("🧩", "терпимо")
+        else -> ScaleOption("☕", "мягко")
     }
     ScaleKind.Sleep -> when (value) {
-        5 -> "☀️"
-        4 -> "🌤"
-        3 -> "☁️"
-        2 -> "🌙"
-        else -> "🌑"
+        5 -> ScaleOption("🌕", "отличный")
+        4 -> ScaleOption("🌖", "хороший")
+        3 -> ScaleOption("🌗", "обычный")
+        2 -> ScaleOption("🌘", "плохой")
+        else -> ScaleOption("🌑", "очень плохой")
     }
-    ScaleKind.Energy -> "⚡"
-    ScaleKind.Anxiety -> "◌"
-    ScaleKind.Stress -> "◆"
 }
+
+private fun valuesForScale(kind: ScaleKind): IntProgression = when (kind) {
+    ScaleKind.Anxiety,
+    ScaleKind.Stress -> 5 downTo 1
+    else -> 1..5
+}
+
+private fun scaleLabel(kind: ScaleKind, value: Int): String = scaleOption(kind, value).label
 
 private fun recordWord(n: Int): String = when (n) {
     1 -> "запись"
