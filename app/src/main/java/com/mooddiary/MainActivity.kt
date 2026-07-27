@@ -250,7 +250,7 @@ private class LocalMoodStore(
         }.sortedByDescending { it.date }
     }
 
-    fun save(draft: DraftEntry) {
+    fun save(draft: DraftEntry): Boolean = try {
         val existing = entries()
         val now = System.currentTimeMillis()
         val sameDate = existing.firstOrNull { it.date == draft.date }
@@ -270,6 +270,8 @@ private class LocalMoodStore(
         )
         val next = existing.filterNot { it.id == id || it.date == draft.date } + entry
         saveEntries(next)
+    } catch (e: Exception) {
+        false
     }
 
     fun deleteEntry(id: Long) {
@@ -327,7 +329,7 @@ private class LocalMoodStore(
         context.startActivity(Intent.createChooser(intent, "Экспорт статистики"))
     }
 
-    private fun saveEntries(entries: List<Entry>) {
+    private fun saveEntries(entries: List<Entry>): Boolean {
         val json = JSONArray()
         entries.sortedByDescending { it.date }.forEach { entry ->
             json.put(
@@ -344,7 +346,7 @@ private class LocalMoodStore(
                     .put("updatedAt", entry.updatedAt),
             )
         }
-        prefs.edit().putString(KEY_ENTRIES, json.toString()).apply()
+        return prefs.edit().putString(KEY_ENTRIES, json.toString()).commit()
     }
 }
 
@@ -421,9 +423,12 @@ private fun MoodDiaryApp(store: LocalMoodStore) {
                         Screen.CheckIn -> CheckInScreen(
                             entry = editingEntry,
                             onSave = {
-                                store.save(it)
-                                refresh()
-                                goHome()
+                                val ok = store.save(it)
+                                if (ok) {
+                                    refresh()
+                                    goHome()
+                                }
+                                ok
                             },
                             onBack = ::goHome,
                         )
@@ -598,7 +603,7 @@ private fun HomeScreen(
 @OptIn(ExperimentalLayoutApi::class)
 private fun CheckInScreen(
     entry: Entry?,
-    onSave: (DraftEntry) -> Unit,
+    onSave: (DraftEntry) -> Boolean,
     onBack: () -> Unit,
 ) {
     var mood by remember(entry) { mutableStateOf(entry?.mood) }
@@ -611,6 +616,7 @@ private fun CheckInScreen(
     val firstEmptyStep = answers.indexOfFirst { it == null }.let { if (it == -1) 0 else it }
     var carouselStep by remember(entry) { mutableStateOf(firstEmptyStep) }
     val canSave = answers.all { it != null }
+    var saveError by remember { mutableStateOf(false) }
     fun answerForStep(step: Int): Int? = when (step) {
         0 -> mood
         1 -> energy
@@ -715,7 +721,8 @@ private fun CheckInScreen(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = canSave && carouselStep == 5,
                 onClick = {
-                    onSave(
+                    saveError = false
+                    val ok = onSave(
                         DraftEntry(
                             id = entry?.id,
                             date = entry?.date ?: LocalDate.now(),
@@ -728,9 +735,17 @@ private fun CheckInScreen(
                             createdAt = entry?.createdAt,
                         ),
                     )
+                    if (!ok) saveError = true
                 },
             ) {
                 Text("Сохранить")
+            }
+            if (saveError) {
+                Text(
+                    "Не удалось сохранить запись. Проверьте свободное место и попробуйте снова.",
+                    color = Color(0xFFB3261E),
+                    fontSize = 14.sp,
+                )
             }
         }
     }
@@ -1043,7 +1058,7 @@ private fun ProgressBlock(insight: Insight, entryCount: Int) {
                 if (entryCount < 3) {
                     "Нужно ещё $left ${recordWord(left)}, чтобы сравнить сон и настроение без поспешных выводов."
                 } else {
-                    "Первый сигнал уже есть. Ещё $left ${recordWord(left)} помогут понять, устойчив ли он."
+                    "Хорошее начало. Ещё $left ${recordWord(left)} — и вывод будет надёжнее."
                 },
                 color = MoodColors.Muted,
             )
@@ -1435,7 +1450,7 @@ private fun insightPreviewText(insight: Insight): String = when (insight.status)
     InsightStatus.NotEnoughData ->
         "Пока собираем основу: настроение, сон и контекст дня. Инсайт появится после 3 записей."
     InsightStatus.Waiting ->
-        "Первый сигнал уже можно показать, но для уверенности нужно 5 записей. Открой, чтобы увидеть текущую картину."
+        "Первые записи уже есть. Собираем до 5 для осторожного вывода — открой, чтобы увидеть прогресс."
     InsightStatus.Found ->
         "Есть осторожное наблюдение по твоим последним записям. Открой, чтобы увидеть объяснение и маленькое действие."
     InsightStatus.NoClearPattern ->
@@ -1506,10 +1521,15 @@ private fun valuesForScale(kind: ScaleKind): IntProgression = when (kind) {
 
 private fun scaleLabel(kind: ScaleKind, value: Int): String = scaleOption(kind, value).label
 
-private fun recordWord(n: Int): String = when (n) {
-    1 -> "запись"
-    2, 3, 4 -> "записи"
-    else -> "записей"
+private fun recordWord(n: Int): String {
+    val mod100 = n % 100
+    val mod10 = n % 10
+    return when {
+        mod100 in 11..14 -> "записей"
+        mod10 == 1 -> "запись"
+        mod10 in 2..4 -> "записи"
+        else -> "записей"
+    }
 }
 
 private fun formatDate(date: LocalDate): String =
