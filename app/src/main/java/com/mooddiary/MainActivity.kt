@@ -1058,7 +1058,7 @@ private fun ProgressBlock(insight: Insight, entryCount: Int) {
                 if (entryCount < 3) {
                     "Нужно ещё $left ${recordWord(left)}, чтобы сравнить сон и настроение без поспешных выводов."
                 } else {
-                    "Хорошее начало. Ещё $left ${recordWord(left)} — и вывод будет надёжнее."
+                    "Хорошее начало. Ещё $left ${recordWord(left)} до первого инсайта."
                 },
                 color = MoodColors.Muted,
             )
@@ -1450,7 +1450,7 @@ private fun insightPreviewText(insight: Insight): String = when (insight.status)
     InsightStatus.NotEnoughData ->
         "Пока собираем основу: настроение, сон и контекст дня. Инсайт появится после 3 записей."
     InsightStatus.Waiting ->
-        "Первые записи уже есть. Собираем до 5 для осторожного вывода — открой, чтобы увидеть прогресс."
+        "Первые записи уже есть. Первый инсайт появится после 5 записей."
     InsightStatus.Found ->
         "Есть осторожное наблюдение по твоим последним записям. Открой, чтобы увидеть объяснение и маленькое действие."
     InsightStatus.NoClearPattern ->
