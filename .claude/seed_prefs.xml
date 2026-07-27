@@ -1,0 +1,5 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <boolean name="disclaimer_shown" value="true" />
+    <string name="entries">[{"id":3001,"date":"2026-07-24","mood":3,"energy":3,"anxiety":3,"stress":3,"sleep":3,"tags":[],"createdAt":1000,"updatedAt":1000},{"id":3002,"date":"2026-07-25","mood":4,"energy":3,"anxiety":3,"stress":3,"sleep":3,"tags":[],"createdAt":1000,"updatedAt":1000},{"id":3003,"date":"2026-07-26","mood":3,"energy":3,"anxiety":3,"stress":3,"sleep":3,"tags":[],"createdAt":1000,"updatedAt":1000},{"id":3004,"date":"2026-07-27","mood":4,"energy":3,"anxiety":3,"stress":3,"sleep":3,"tags":[],"createdAt":1000,"updatedAt":1000}]</string>
+</map>
