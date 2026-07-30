@@ -58,9 +58,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -237,9 +239,30 @@ private object MoodColors {
         1 to Color(0xFF485C80),
     )
 
-    val Energy = Color(0xFFC8A84B)
-    val Anxiety = Color(0xFFC0A8B8)
-    val Stress = Color(0xFF9890C4)
+    val Energy = mapOf(
+        5 to Color(0xFF8EB69B),
+        4 to Color(0xFF7EC9C3),
+        3 to Color(0xFFD7C4A3),
+        2 to Color(0xFFB8A8D9),
+        1 to Color(0xFF6E7CA8),
+    )
+    val EnergyLine = Color(0xFFC8A84B)
+    val Anxiety = mapOf(
+        5 to Color(0xFF6E7CA8),
+        4 to Color(0xFF9890C4),
+        3 to Color(0xFFB8A8D9),
+        2 to Color(0xFFD7C4A3),
+        1 to Color(0xFF8EB69B),
+    )
+    val AnxietyLine = Color(0xFFC0A8B8)
+    val Stress = mapOf(
+        5 to Color(0xFF6E7CA8),
+        4 to Color(0xFF9890C4),
+        3 to Color(0xFFD7C4A3),
+        2 to Color(0xFF7EC9C3),
+        1 to Color(0xFF8EB69B),
+    )
+    val StressLine = Color(0xFF9890C4)
 }
 
 private val AppCardShape = RoundedCornerShape(8.dp)
@@ -1396,9 +1419,9 @@ private fun RatingRow(
                 val color = when (kind) {
                     ScaleKind.Mood -> MoodColors.Mood[value] ?: MoodColors.Accent
                     ScaleKind.Sleep -> MoodColors.Sleep[value] ?: MoodColors.Accent
-                    ScaleKind.Energy -> MoodColors.Energy
-                    ScaleKind.Anxiety -> MoodColors.Anxiety
-                    ScaleKind.Stress -> MoodColors.Stress
+                    ScaleKind.Energy -> MoodColors.Energy[value] ?: MoodColors.Accent
+                    ScaleKind.Anxiety -> MoodColors.Anxiety[value] ?: MoodColors.AnxietyLine
+                    ScaleKind.Stress -> MoodColors.Stress[value] ?: MoodColors.StressLine
                 }
                 val selectedModifier = if (selected == value) {
                     Modifier.border(2.dp, MoodColors.Accent, CircleShape)
@@ -1542,7 +1565,7 @@ private fun InsightCard(insight: Insight, onOpen: () -> Unit) {
 @Composable
 private fun MoodScaleStrip() {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        (5 downTo 1).forEach { value ->
+        (1..5).forEach { value ->
             Box(
                 modifier = Modifier
                     .size(22.dp)
@@ -1591,6 +1614,7 @@ private fun MiniChart(entries: List<Entry>) {
                     days = days,
                     values = days.map { byDate[it]?.sleep },
                 )
+                CombinedMetricsChartSection(days = days, byDate = byDate)
             }
         }
     }
@@ -1763,6 +1787,158 @@ private fun MetricLineChart(kind: ScaleKind, values: List<Int?>) {
 }
 
 @Composable
+private fun CombinedMetricsChartSection(days: List<LocalDate>, byDate: Map<LocalDate, Entry>) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Общий график", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        CombinedMetricsChart(days = days, byDate = byDate)
+        CombinedChartLegend()
+    }
+}
+
+@Composable
+private fun CombinedMetricsChart(days: List<LocalDate>, byDate: Map<LocalDate, Entry>) {
+    val series = listOf(
+        CombinedSeries(
+            label = "Настроение",
+            color = MoodColors.Mood[5] ?: MoodColors.Accent,
+            values = days.map { byDate[it]?.mood },
+        ),
+        CombinedSeries(
+            label = "Сон",
+            color = MoodColors.Sleep[4] ?: MoodColors.Accent,
+            values = days.map { byDate[it]?.sleep },
+            dash = floatArrayOf(8f, 6f),
+        ),
+        CombinedSeries(
+            label = "Энергия",
+            color = MoodColors.EnergyLine,
+            values = days.map { byDate[it]?.energy },
+        ),
+        CombinedSeries(
+            label = "Тревожность",
+            color = MoodColors.AnxietyLine,
+            values = days.map { byDate[it]?.anxiety },
+            dash = floatArrayOf(2f, 5f),
+        ),
+        CombinedSeries(
+            label = "Стресс",
+            color = MoodColors.StressLine,
+            values = days.map { byDate[it]?.stress },
+            dash = floatArrayOf(8f, 4f, 2f, 4f),
+        ),
+    )
+
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(150.dp),
+    ) {
+        val left = 28.dp.toPx()
+        val right = size.width - 6.dp.toPx()
+        val top = 10.dp.toPx()
+        val bottom = size.height - 24.dp.toPx()
+        val chartHeight = bottom - top
+        val chartWidth = right - left
+
+        (1..5).forEach { level ->
+            val y = bottom - (level - 1) / 4f * chartHeight
+            drawLine(
+                color = MoodColors.Border.copy(alpha = 0.72f),
+                start = Offset(left, y),
+                end = Offset(right, y),
+                strokeWidth = 1.dp.toPx(),
+            )
+        }
+
+        (1..5).forEach { level ->
+            val y = bottom - (level - 1) / 4f * chartHeight
+            drawContext.canvas.nativeCanvas.drawText(
+                level.toString(),
+                8.dp.toPx(),
+                y + 4.dp.toPx(),
+                android.graphics.Paint().apply {
+                    color = android.graphics.Color.rgb(102, 106, 115)
+                    textSize = 10.sp.toPx()
+                    isAntiAlias = true
+                },
+            )
+        }
+
+        series.forEach { item ->
+            val effect = item.dash?.let { dash ->
+                PathEffect.dashPathEffect(dash.map { it.dp.toPx() }.toFloatArray())
+            }
+            var previous: Offset? = null
+            item.values.forEachIndexed { index, value ->
+                if (value == null) {
+                    previous = null
+                } else {
+                    val point = Offset(
+                        x = left + index / (item.values.size - 1).toFloat() * chartWidth,
+                        y = bottom - (value - 1) / 4f * chartHeight,
+                    )
+                    previous?.let {
+                        drawLine(
+                            color = item.color,
+                            start = it,
+                            end = point,
+                            strokeWidth = item.strokeWidth.dp.toPx(),
+                            cap = StrokeCap.Round,
+                            pathEffect = effect,
+                        )
+                    }
+                    drawCircle(
+                        color = item.color,
+                        radius = 3.2.dp.toPx(),
+                        center = point,
+                    )
+                    previous = point
+                }
+            }
+        }
+
+        days.forEachIndexed { index, day ->
+            val x = left + index / (days.size - 1).toFloat() * chartWidth
+            drawContext.canvas.nativeCanvas.drawText(
+                day.dayOfMonth.toString(),
+                x - 5.dp.toPx(),
+                size.height - 4.dp.toPx(),
+                android.graphics.Paint().apply {
+                    color = android.graphics.Color.rgb(102, 106, 115)
+                    textSize = 10.sp.toPx()
+                    isAntiAlias = true
+                },
+            )
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun CombinedChartLegend() {
+    val items = listOf(
+        "● настроение" to (MoodColors.Mood[5] ?: MoodColors.Accent),
+        "– – сон" to (MoodColors.Sleep[4] ?: MoodColors.Accent),
+        "● энергия" to MoodColors.EnergyLine,
+        ". . тревожность" to MoodColors.AnxietyLine,
+        "-· стресс" to MoodColors.StressLine,
+    )
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        items.forEach { (label, color) ->
+            Text(label, color = color, fontSize = 12.sp)
+        }
+    }
+}
+
+private data class CombinedSeries(
+    val label: String,
+    val color: Color,
+    val values: List<Int?>,
+    val dash: FloatArray? = null,
+    val strokeWidth: Float = 1.8f,
+)
+
+@Composable
 @OptIn(ExperimentalLayoutApi::class)
 private fun FeedbackRow(onFeedback: (String) -> Unit) {
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -1864,21 +2040,18 @@ private fun BottomNav(
         ) {
             BottomNavItem(
                 icon = "⌂",
-                label = "Сегодня",
                 selected = activeScreen == Screen.Home,
                 onClick = onHome,
                 modifier = Modifier.weight(1f),
             )
             BottomNavItem(
                 icon = "▤",
-                label = "История",
                 selected = activeScreen == Screen.History,
                 onClick = onHistory,
                 modifier = Modifier.weight(1f),
             )
             BottomNavItem(
                 icon = "⚙",
-                label = "Данные",
                 selected = activeScreen == Screen.Settings,
                 onClick = onSettings,
                 modifier = Modifier.weight(1f),
@@ -1890,7 +2063,6 @@ private fun BottomNav(
 @Composable
 private fun BottomNavItem(
     icon: String,
-    label: String,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1898,16 +2070,15 @@ private fun BottomNavItem(
     val contentColor = if (selected) MoodColors.AccentDark else MoodColors.Muted
     Column(
         modifier = modifier
-            .height(54.dp)
+            .height(44.dp)
             .clip(AppCardShape)
             .background(if (selected) MoodColors.AccentSoft else Color.Transparent)
             .clickable(onClick = onClick)
-            .padding(vertical = 6.dp),
+            .padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(icon, fontSize = 20.sp, color = contentColor, lineHeight = 20.sp)
-        Text(label, fontSize = 11.sp, color = contentColor, maxLines = 1)
+        Text(icon, fontSize = 23.sp, color = contentColor, lineHeight = 23.sp)
     }
 }
 
@@ -1987,7 +2158,10 @@ private fun ScaleGlyph(
 ) {
     when (kind) {
         ScaleKind.Mood -> MoodFaceGlyph(value = value, modifier = modifier)
+        ScaleKind.Energy -> BatteryGlyph(value = value, modifier = modifier)
         ScaleKind.Sleep -> SleepGlyph(value = value, modifier = modifier, cutoutColor = cutoutColor)
+        ScaleKind.Anxiety -> AnxietyWeatherGlyph(value = value, modifier = modifier)
+        ScaleKind.Stress -> StressHeadGlyph(value = value, modifier = modifier)
         else -> Box(modifier = modifier, contentAlignment = Alignment.Center) {
             Text(scaleOption(kind, value).icon, fontSize = 16.sp, textAlign = TextAlign.Center)
         }
@@ -2059,6 +2233,46 @@ private fun DrawScope.drawMoodArc(color: Color, stroke: Float, top: Float, start
         size = Size(size.width * 0.36f, size.height * 0.24f),
         style = Stroke(width = stroke, cap = StrokeCap.Round),
     )
+}
+
+@Composable
+private fun BatteryGlyph(value: Int, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val ink = Color(0xFF38404C).copy(alpha = 0.88f)
+        val stroke = size.minDimension * 0.075f
+        val bodyLeft = size.width * 0.12f
+        val bodyTop = size.height * 0.31f
+        val bodyWidth = size.width * 0.68f
+        val bodyHeight = size.height * 0.38f
+        val terminalWidth = size.width * 0.08f
+        val terminalHeight = bodyHeight * 0.42f
+        val corner = size.minDimension * 0.08f
+        val fillRatio = ((value - 1) / 4f).coerceIn(0f, 1f)
+        val innerPadding = stroke * 1.55f
+        val innerWidth = (bodyWidth - innerPadding * 2f) * fillRatio
+
+        drawRoundRect(
+            color = ink.copy(alpha = 0.90f),
+            topLeft = Offset(bodyLeft, bodyTop),
+            size = Size(bodyWidth, bodyHeight),
+            cornerRadius = CornerRadius(corner, corner),
+            style = Stroke(width = stroke),
+        )
+        drawRoundRect(
+            color = ink.copy(alpha = 0.90f),
+            topLeft = Offset(bodyLeft + bodyWidth + stroke * 0.30f, bodyTop + (bodyHeight - terminalHeight) / 2f),
+            size = Size(terminalWidth, terminalHeight),
+            cornerRadius = CornerRadius(corner * 0.55f, corner * 0.55f),
+        )
+        if (innerWidth > 0f) {
+            drawRoundRect(
+                color = ink.copy(alpha = 0.90f),
+                topLeft = Offset(bodyLeft + innerPadding, bodyTop + innerPadding),
+                size = Size(innerWidth, bodyHeight - innerPadding * 2f),
+                cornerRadius = CornerRadius(corner * 0.55f, corner * 0.55f),
+            )
+        }
+    }
 }
 
 @Composable
@@ -2140,12 +2354,211 @@ private fun DrawScope.drawStar(center: Offset, radius: Float, color: Color) {
     )
 }
 
+@Composable
+private fun AnxietyWeatherGlyph(value: Int, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        when (value) {
+            1 -> drawAnxietySun()
+            2 -> drawPartlyCloudy()
+            3 -> {
+                drawCloudGlyph()
+                drawRainDrops(count = 2)
+            }
+            4 -> {
+                drawCloudGlyph()
+                drawRainDrops(count = 4)
+            }
+            else -> {
+                drawCloudGlyph()
+                drawRainDrops(count = 3)
+                drawLightningGlyph()
+            }
+        }
+    }
+}
+
+private fun DrawScope.drawAnxietySun() {
+    val white = Color.White.copy(alpha = 0.95f)
+    val center = Offset(size.width * 0.5f, size.height * 0.5f)
+    val radius = size.minDimension * 0.18f
+    drawCircle(white, radius = radius, center = center)
+    val inner = size.minDimension * 0.31f
+    val outer = size.minDimension * 0.42f
+    val stroke = size.minDimension * 0.055f
+    listOf(0f, 45f, 90f, 135f, 180f, 225f, 270f, 315f).forEach { angle ->
+        val radians = Math.toRadians(angle.toDouble())
+        drawLine(
+            color = white,
+            start = Offset(
+                x = center.x + kotlin.math.cos(radians).toFloat() * inner,
+                y = center.y + kotlin.math.sin(radians).toFloat() * inner,
+            ),
+            end = Offset(
+                x = center.x + kotlin.math.cos(radians).toFloat() * outer,
+                y = center.y + kotlin.math.sin(radians).toFloat() * outer,
+            ),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+    }
+}
+
+private fun DrawScope.drawPartlyCloudy() {
+    val white = Color.White.copy(alpha = 0.95f)
+    val sunCenter = Offset(size.width * 0.36f, size.height * 0.38f)
+    drawCircle(white, radius = size.minDimension * 0.13f, center = sunCenter)
+    val rayInner = size.minDimension * 0.21f
+    val rayOuter = size.minDimension * 0.28f
+    val rayStroke = size.minDimension * 0.045f
+    listOf(180f, 225f, 270f, 315f).forEach { angle ->
+        val radians = Math.toRadians(angle.toDouble())
+        drawLine(
+            color = white,
+            start = Offset(
+                x = sunCenter.x + kotlin.math.cos(radians).toFloat() * rayInner,
+                y = sunCenter.y + kotlin.math.sin(radians).toFloat() * rayInner,
+            ),
+            end = Offset(
+                x = sunCenter.x + kotlin.math.cos(radians).toFloat() * rayOuter,
+                y = sunCenter.y + kotlin.math.sin(radians).toFloat() * rayOuter,
+            ),
+            strokeWidth = rayStroke,
+            cap = StrokeCap.Round,
+        )
+    }
+    drawCloudGlyph()
+}
+
+private fun DrawScope.drawRainDrops(count: Int) {
+    val white = Color.White.copy(alpha = 0.95f)
+    val stroke = size.minDimension * 0.065f
+    val positions = when (count) {
+        2 -> listOf(0.40f, 0.60f)
+        3 -> listOf(0.36f, 0.52f, 0.68f)
+        else -> listOf(0.31f, 0.45f, 0.59f, 0.73f)
+    }
+    positions.forEachIndexed { index, x ->
+        val top = if (index % 2 == 0) 0.68f else 0.63f
+        drawLine(
+            color = white,
+            start = Offset(size.width * x, size.height * top),
+            end = Offset(size.width * (x - 0.04f), size.height * (top + 0.13f)),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+    }
+}
+
+private fun DrawScope.drawLightningGlyph() {
+    val white = Color.White.copy(alpha = 0.95f)
+    val bolt = Path().apply {
+        moveTo(size.width * 0.54f, size.height * 0.56f)
+        lineTo(size.width * 0.43f, size.height * 0.79f)
+        lineTo(size.width * 0.55f, size.height * 0.77f)
+        lineTo(size.width * 0.47f, size.height * 0.98f)
+        lineTo(size.width * 0.72f, size.height * 0.68f)
+        lineTo(size.width * 0.59f, size.height * 0.70f)
+        close()
+    }
+    drawPath(path = bolt, color = white)
+}
+
+@Composable
+private fun StressHeadGlyph(value: Int, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val ink = Color(0xFF38404C).copy(alpha = 0.88f)
+        val stroke = size.minDimension * 0.075f
+        val headCenter = Offset(size.width * 0.50f, size.height * 0.32f)
+        val headRadius = size.minDimension * 0.15f
+
+        drawCircle(
+            color = ink,
+            radius = headRadius,
+            center = headCenter,
+            style = Stroke(width = stroke),
+        )
+
+        val shoulders = Path().apply {
+            moveTo(size.width * 0.23f, size.height * 0.78f)
+            cubicTo(
+                size.width * 0.25f,
+                size.height * 0.61f,
+                size.width * 0.34f,
+                size.height * 0.54f,
+                size.width * 0.42f,
+                size.height * 0.50f,
+            )
+            moveTo(size.width * 0.58f, size.height * 0.50f)
+            cubicTo(
+                size.width * 0.66f,
+                size.height * 0.54f,
+                size.width * 0.75f,
+                size.height * 0.61f,
+                size.width * 0.77f,
+                size.height * 0.78f,
+            )
+        }
+        drawPath(
+            path = shoulders,
+            color = ink,
+            style = Stroke(width = stroke, cap = StrokeCap.Round),
+        )
+        drawLine(
+            color = ink,
+            start = Offset(size.width * 0.22f, size.height * 0.78f),
+            end = Offset(size.width * 0.78f, size.height * 0.78f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+
+        val stressMarks = listOf(
+            listOf(
+                Offset(size.width * 0.25f, size.height * 0.25f),
+                Offset(size.width * 0.17f, size.height * 0.18f),
+                Offset(size.width * 0.24f, size.height * 0.12f),
+            ),
+            listOf(
+                Offset(size.width * 0.77f, size.height * 0.24f),
+                Offset(size.width * 0.86f, size.height * 0.17f),
+                Offset(size.width * 0.78f, size.height * 0.10f),
+            ),
+            listOf(
+                Offset(size.width * 0.22f, size.height * 0.50f),
+                Offset(size.width * 0.12f, size.height * 0.48f),
+                Offset(size.width * 0.18f, size.height * 0.39f),
+            ),
+            listOf(
+                Offset(size.width * 0.80f, size.height * 0.55f),
+                Offset(size.width * 0.91f, size.height * 0.51f),
+                Offset(size.width * 0.84f, size.height * 0.42f),
+            ),
+        )
+
+        stressMarks.take((value - 1).coerceIn(0, stressMarks.size)).forEach { points ->
+            drawZigzag(points = points, color = ink, stroke = stroke)
+        }
+    }
+}
+
+private fun DrawScope.drawZigzag(points: List<Offset>, color: Color, stroke: Float) {
+    if (points.size < 2) return
+    val path = Path().apply {
+        moveTo(points.first().x, points.first().y)
+        points.drop(1).forEach { point -> lineTo(point.x, point.y) }
+    }
+    drawPath(
+        path = path,
+        color = color,
+        style = Stroke(width = stroke, cap = StrokeCap.Round),
+    )
+}
+
 private fun scaleColor(kind: ScaleKind, value: Int): Color = when (kind) {
     ScaleKind.Mood -> MoodColors.Mood[value] ?: MoodColors.Accent
     ScaleKind.Sleep -> MoodColors.Sleep[value] ?: MoodColors.Accent
-    ScaleKind.Energy -> MoodColors.Energy
-    ScaleKind.Anxiety -> MoodColors.Anxiety
-    ScaleKind.Stress -> MoodColors.Stress
+    ScaleKind.Energy -> MoodColors.Energy[value] ?: MoodColors.Accent
+    ScaleKind.Anxiety -> MoodColors.Anxiety[value] ?: MoodColors.AnxietyLine
+    ScaleKind.Stress -> MoodColors.Stress[value] ?: MoodColors.StressLine
 }
 
 @Composable
@@ -2447,41 +2860,40 @@ private fun scaleOption(kind: ScaleKind, value: Int): ScaleOption = when (kind) 
         5 -> ScaleOption("☺", "очень хорошо")
         4 -> ScaleOption("◡", "хорошо")
         3 -> ScaleOption("–", "спокойно")
-        2 -> ScaleOption("⌣", "низкий ресурс")
-        else -> ScaleOption("⌢", "тяжёлый день")
+        2 -> ScaleOption("⌣", "грустное")
+        else -> ScaleOption("⌢", "тяжёлое")
     }
     ScaleKind.Energy -> when (value) {
-        5 -> ScaleOption("⚡", "заряд")
-        4 -> ScaleOption("🏃", "много")
-        3 -> ScaleOption("🚶", "средне")
-        2 -> ScaleOption("🛋", "мало")
-        else -> ScaleOption("🪫", "нет сил")
+        5 -> ScaleOption("", "полный заряд")
+        4 -> ScaleOption("", "хороший заряд")
+        3 -> ScaleOption("", "средне")
+        2 -> ScaleOption("", "мало сил")
+        else -> ScaleOption("", "нет сил")
     }
     ScaleKind.Anxiety -> when (value) {
-        5 -> ScaleOption("❗", "очень")
-        4 -> ScaleOption("🌀", "сильная")
-        3 -> ScaleOption("💭", "заметная")
-        2 -> ScaleOption("🌿", "лёгкая")
-        else -> ScaleOption("🧘", "спокойно")
+        5 -> ScaleOption("", "максимальная")
+        4 -> ScaleOption("", "сильная")
+        3 -> ScaleOption("", "заметная")
+        2 -> ScaleOption("", "лёгкая")
+        else -> ScaleOption("", "спокойно")
     }
     ScaleKind.Stress -> when (value) {
-        5 -> ScaleOption("🧨", "предел")
-        4 -> ScaleOption("🧱", "перегруз")
-        3 -> ScaleOption("📌", "нагрузка")
-        2 -> ScaleOption("🧩", "терпимо")
-        else -> ScaleOption("☕", "мягко")
+        5 -> ScaleOption("", "сильный")
+        4 -> ScaleOption("", "перегруз")
+        3 -> ScaleOption("", "заметный")
+        2 -> ScaleOption("", "лёгкий")
+        else -> ScaleOption("", "нет стресса")
     }
     ScaleKind.Sleep -> when (value) {
-        5 -> ScaleOption("☼", "отличный сон")
-        4 -> ScaleOption("☁", "хороший сон")
-        3 -> ScaleOption("☁", "средний сон")
-        2 -> ScaleOption("☾", "поверхностный")
+        5 -> ScaleOption("☼", "отличный")
+        4 -> ScaleOption("☁", "хороший")
+        3 -> ScaleOption("☁", "средний")
+        2 -> ScaleOption("☾", "плохой")
         else -> ScaleOption("☽", "очень плохой")
     }
 }
 
 private fun valuesForScale(kind: ScaleKind): IntProgression = when (kind) {
-    ScaleKind.Mood,
     ScaleKind.Sleep,
     ScaleKind.Anxiety,
     ScaleKind.Stress -> 5 downTo 1
