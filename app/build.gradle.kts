@@ -4,6 +4,10 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val showDemoDataTools = providers.gradleProperty("moodDiary.showDemoDataTools")
+    .map(String::toBoolean)
+    .orElse(false)
+
 android {
     namespace = "com.mooddiary"
     compileSdk = 36
@@ -14,9 +18,11 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
+        buildConfigField("boolean", "SHOW_DEMO_DATA_TOOLS", showDemoDataTools.get().toString())
     }
 
     buildFeatures {
+        buildConfig = true
         compose = true
     }
 

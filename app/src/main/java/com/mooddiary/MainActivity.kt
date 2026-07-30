@@ -77,6 +77,7 @@ private const val KEY_FEEDBACK_USEFUL = "feedback_useful"
 private const val KEY_FEEDBACK_NOT_USEFUL = "feedback_not_useful"
 private const val KEY_FEEDBACK_SKIPPED = "feedback_skipped"
 private const val KEY_INSIGHT_OPENED = "insight_opened"
+private const val MAX_DEMO_DAYS = 31
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -99,6 +100,7 @@ private enum class Screen {
     History,
     Insight,
     Settings,
+    DemoData,
 }
 
 private enum class InsightStatus {
@@ -174,6 +176,13 @@ private data class DraftEntry(
     val tags: Set<String> = emptySet(),
     val createdAt: Long? = null,
 )
+
+private enum class DemoPreset {
+    SleepMoodPattern,
+    StressfulPeriod,
+    StableGood,
+    Manual,
+}
 
 private val Tags = listOf(
     Tag("work", "Работа", "Нагрузка"),
@@ -270,6 +279,33 @@ private class LocalMoodStore(
         )
         val next = existing.filterNot { it.id == id || it.date == draft.date } + entry
         saveEntries(next)
+    } catch (e: Exception) {
+        false
+    }
+
+    fun saveAll(drafts: List<DraftEntry>): Boolean = try {
+        val existing = entries()
+        val now = System.currentTimeMillis()
+        val byDate = existing.associateBy { it.date }
+        var sequence = now
+        val generated = drafts.map { draft ->
+            val sameDate = byDate[draft.date]
+            val id = draft.id ?: sameDate?.id ?: sequence++
+            Entry(
+                id = id,
+                date = draft.date,
+                mood = requireNotNull(draft.mood),
+                energy = requireNotNull(draft.energy),
+                anxiety = requireNotNull(draft.anxiety),
+                stress = requireNotNull(draft.stress),
+                sleep = requireNotNull(draft.sleep),
+                tags = draft.tags.sorted(),
+                createdAt = draft.createdAt ?: sameDate?.createdAt ?: now,
+                updatedAt = now,
+            )
+        }
+        val dates = generated.map { it.date }.toSet()
+        saveEntries(existing.filterNot { it.date in dates } + generated)
     } catch (e: Exception) {
         false
     }
@@ -372,7 +408,11 @@ private fun MoodDiaryApp(store: LocalMoodStore) {
     }
 
     BackHandler(enabled = screen != Screen.Onboarding && screen != Screen.Home) {
-        goHome()
+        if (screen == Screen.DemoData) {
+            screen = Screen.Settings
+        } else {
+            goHome()
+        }
     }
 
     MoodDiaryTheme {
@@ -470,6 +510,12 @@ private fun MoodDiaryApp(store: LocalMoodStore) {
                         Screen.Settings -> SettingsScreen(
                             onBack = ::goHome,
                             onExport = { store.shareStats() },
+                            showDemoDataTools = BuildConfig.SHOW_DEMO_DATA_TOOLS,
+                            onDemoData = {
+                                editingEntry = null
+                                selectedHistoryEntry = null
+                                screen = Screen.DemoData
+                            },
                             onDeleteAll = {
                                 store.clearAll()
                                 refresh()
@@ -477,6 +523,22 @@ private fun MoodDiaryApp(store: LocalMoodStore) {
                                 editingEntry = null
                                 screen = Screen.Onboarding
                             },
+                        )
+
+                        Screen.DemoData -> DemoDataScreen(
+                            entries = entries,
+                            onSave = { drafts ->
+                                val ok = store.saveAll(drafts)
+                                if (ok) refresh()
+                                ok
+                            },
+                            onDeleteToday = {
+                                entries.firstOrNull { it.date == LocalDate.now() }?.let {
+                                    store.deleteEntry(it.id)
+                                    refresh()
+                                }
+                            },
+                            onBack = { screen = Screen.Settings },
                         )
                     }
                 }
@@ -489,6 +551,7 @@ private fun activeNavScreen(screen: Screen): Screen = when (screen) {
     Screen.CheckIn -> Screen.Home
     Screen.Insight -> Screen.Home
     Screen.Onboarding -> Screen.Home
+    Screen.DemoData -> Screen.Settings
     else -> screen
 }
 
@@ -878,6 +941,8 @@ private fun InsightScreen(
 private fun SettingsScreen(
     onBack: () -> Unit,
     onExport: () -> Unit,
+    showDemoDataTools: Boolean,
+    onDemoData: () -> Unit,
     onDeleteAll: () -> Unit,
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
@@ -895,6 +960,11 @@ private fun SettingsScreen(
             Text("Доверие и данные", fontSize = 24.sp, fontWeight = FontWeight.Bold)
             InfoCard("Mood Diary не ставит диагнозы и не заменяет специалиста. Рекомендации — это бережные идеи для самонаблюдения.")
             InfoCard("P0 работает офлайн: записи, оценки инсайтов и счётчики статистики хранятся только на устройстве.")
+            if (showDemoDataTools) {
+                Button(modifier = Modifier.fillMaxWidth(), onClick = onDemoData) {
+                    Text("Заполнить тестовые записи")
+                }
+            }
             Button(modifier = Modifier.fillMaxWidth(), onClick = onExport) {
                 Text("Экспорт статистики для команды")
             }
@@ -920,6 +990,288 @@ private fun SettingsScreen(
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Отмена") } },
         )
+    }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun DemoDataScreen(
+    entries: List<Entry>,
+    onSave: (List<DraftEntry>) -> Boolean,
+    onDeleteToday: () -> Unit,
+    onBack: () -> Unit,
+) {
+    var startDate by remember { mutableStateOf(LocalDate.now().minusDays(6)) }
+    var endDate by remember { mutableStateOf(LocalDate.now()) }
+    var preset by remember { mutableStateOf(DemoPreset.SleepMoodPattern) }
+    var mood by remember { mutableStateOf(4) }
+    var energy by remember { mutableStateOf(4) }
+    var anxiety by remember { mutableStateOf(2) }
+    var stress by remember { mutableStateOf(2) }
+    var sleep by remember { mutableStateOf(4) }
+    var selectedTags by remember { mutableStateOf(setOf("work", "rest")) }
+    var saveError by remember { mutableStateOf(false) }
+    var savedCount by remember { mutableStateOf<Int?>(null) }
+    val dates = datesBetween(startDate, endDate)
+    val isRangeTooLong = dates.size > MAX_DEMO_DAYS
+    val drafts = if (isRangeTooLong) {
+        emptyList()
+    } else {
+        buildDemoDrafts(
+            dates = dates,
+            preset = preset,
+            manualMood = mood,
+            manualEnergy = energy,
+            manualAnxiety = anxiety,
+            manualStress = stress,
+            manualSleep = sleep,
+            tags = selectedTags,
+        )
+    }
+    val existingDates = entries.map { it.date }.toSet()
+    val overwriteCount = drafts.count { it.date in existingDates }
+    val todayEntryExists = LocalDate.now() in existingDates
+
+    Scaffold(
+        containerColor = MoodColors.Background,
+        topBar = { TopBar("Тестовые записи", onBack) },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text("Заполнение для демонстрации", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            InfoCard("Создаёт локальные тестовые записи за выбранные даты. Если запись за дату уже есть, она будет заменена новыми тестовыми значениями.")
+            DateRangePicker(
+                startDate = startDate,
+                endDate = endDate,
+                onStartChange = {
+                    startDate = it
+                    if (it.isAfter(endDate)) endDate = it
+                    savedCount = null
+                },
+                onEndChange = {
+                    endDate = it
+                    if (it.isBefore(startDate)) startDate = it
+                    savedCount = null
+                },
+                onQuickRange = { days ->
+                    endDate = LocalDate.now()
+                    startDate = LocalDate.now().minusDays((days - 1).toLong())
+                    savedCount = null
+                },
+            )
+            Card(colors = CardDefaults.cardColors(containerColor = MoodColors.Surface)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Сценарий", fontWeight = FontWeight.SemiBold)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DemoPreset.values().forEach { item ->
+                            ChoiceChip(
+                                label = demoPresetLabel(item),
+                                selected = preset == item,
+                                onClick = {
+                                    preset = item
+                                    savedCount = null
+                                },
+                            )
+                        }
+                    }
+                    Text(demoPresetDescription(preset), color = MoodColors.Muted, fontSize = 14.sp, lineHeight = 20.sp)
+                }
+            }
+            if (preset == DemoPreset.Manual) {
+                Card(colors = CardDefaults.cardColors(containerColor = MoodColors.Surface)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Text("Значения для всех дат", fontWeight = FontWeight.SemiBold)
+                        RatingRow("Настроение", mood, ScaleKind.Mood) {
+                            mood = it
+                            savedCount = null
+                        }
+                        RatingRow("Энергия", energy, ScaleKind.Energy) {
+                            energy = it
+                            savedCount = null
+                        }
+                        RatingRow("Тревожность", anxiety, ScaleKind.Anxiety) {
+                            anxiety = it
+                            savedCount = null
+                        }
+                        RatingRow("Стресс", stress, ScaleKind.Stress) {
+                            stress = it
+                            savedCount = null
+                        }
+                        RatingRow("Сон", sleep, ScaleKind.Sleep) {
+                            sleep = it
+                            savedCount = null
+                        }
+                    }
+                }
+            }
+            Card(colors = CardDefaults.cardColors(containerColor = MoodColors.Surface)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Теги ко всем записям", fontWeight = FontWeight.SemiBold)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Tags.forEach { tag ->
+                            TagChip(
+                                tag = tag,
+                                selected = tag.id in selectedTags,
+                                onToggle = {
+                                    selectedTags = if (tag.id in selectedTags) {
+                                        selectedTags - tag.id
+                                    } else {
+                                        selectedTags + tag.id
+                                    }
+                                    savedCount = null
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+            DemoPreview(drafts = drafts, overwriteCount = overwriteCount, isRangeTooLong = isRangeTooLong)
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = drafts.isNotEmpty() && !isRangeTooLong,
+                onClick = {
+                    saveError = false
+                    val ok = onSave(drafts)
+                    if (ok) {
+                        savedCount = drafts.size
+                    } else {
+                        saveError = true
+                        savedCount = null
+                    }
+                },
+            ) {
+                Text("Сохранить ${drafts.size} ${recordWord(drafts.size)}")
+            }
+            savedCount?.let {
+                Text("Готово: сохранено $it ${recordWord(it)}.", color = MoodColors.Accent)
+            }
+            OutlinedButton(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = todayEntryExists,
+                onClick = {
+                    onDeleteToday()
+                    saveError = false
+                    savedCount = null
+                },
+            ) {
+                Text(if (todayEntryExists) "Удалить сегодняшнюю запись" else "Сегодняшней записи нет")
+            }
+            if (saveError) {
+                Text(
+                    "Не удалось сохранить тестовые записи. Проверьте свободное место и попробуйте снова.",
+                    color = Color(0xFFB3261E),
+                    fontSize = 14.sp,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DateRangePicker(
+    startDate: LocalDate,
+    endDate: LocalDate,
+    onStartChange: (LocalDate) -> Unit,
+    onEndChange: (LocalDate) -> Unit,
+    onQuickRange: (Int) -> Unit,
+) {
+    Card(colors = CardDefaults.cardColors(containerColor = MoodColors.Surface)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Даты", fontWeight = FontWeight.SemiBold)
+            DateStepper("С", startDate, onStartChange)
+            DateStepper("По", endDate, onEndChange)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                listOf(3, 5, 7, 14).forEach { days ->
+                    OutlinedButton(modifier = Modifier.weight(1f), onClick = { onQuickRange(days) }) {
+                        Text("${days}д")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DateStepper(label: String, date: LocalDate, onChange: (LocalDate) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(label, modifier = Modifier.width(28.dp), color = MoodColors.Muted)
+        OutlinedButton(onClick = { onChange(date.minusDays(1)) }) {
+            Text("-")
+        }
+        Text(
+            formatShortDate(date),
+            modifier = Modifier.weight(1f),
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+        )
+        OutlinedButton(onClick = { onChange(date.plusDays(1)) }) {
+            Text("+")
+        }
+    }
+}
+
+@Composable
+private fun ChoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    val background = if (selected) Color(0xFFE8E7FF) else MoodColors.Surface
+    val border = if (selected) MoodColors.Accent else Color(0xFFD8D7D2)
+    Text(
+        text = label,
+        modifier = Modifier
+            .clip(RoundedCornerShape(100.dp))
+            .border(1.dp, border, RoundedCornerShape(100.dp))
+            .background(background)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        fontSize = 14.sp,
+    )
+}
+
+@Composable
+private fun DemoPreview(drafts: List<DraftEntry>, overwriteCount: Int, isRangeTooLong: Boolean) {
+    Card(colors = CardDefaults.cardColors(containerColor = MoodColors.Surface)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Предпросмотр", fontWeight = FontWeight.SemiBold)
+            if (isRangeTooLong) {
+                Text("Диапазон слишком большой. Для демо-заполнения выберите до $MAX_DEMO_DAYS дней.", color = MoodColors.Muted)
+            } else {
+                Text(
+                    "${drafts.size} ${recordWord(drafts.size)}. Будет заменено существующих: $overwriteCount.",
+                    color = MoodColors.Muted,
+                    fontSize = 14.sp,
+                )
+                drafts.take(7).forEach { draft ->
+                    DemoPreviewRow(draft)
+                }
+                if (drafts.size > 7) {
+                    Text("И ещё ${drafts.size - 7} ${recordWord(drafts.size - 7)}.", color = MoodColors.Muted, fontSize = 13.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DemoPreviewRow(draft: DraftEntry) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(formatShortDate(draft.date), modifier = Modifier.width(86.dp), fontSize = 13.sp)
+        Dot(MoodColors.Mood[draft.mood] ?: MoodColors.Accent)
+        Text("Н ${draft.mood}", fontSize = 13.sp)
+        Dot(MoodColors.Sleep[draft.sleep] ?: MoodColors.Accent)
+        Text("Сон ${draft.sleep}", fontSize = 13.sp)
+        Text("Э ${draft.energy} / Тр ${draft.anxiety} / Ст ${draft.stress}", color = MoodColors.Muted, fontSize = 13.sp)
     }
 }
 
@@ -1320,6 +1672,122 @@ private fun EmptyState(
     }
 }
 
+private fun datesBetween(startDate: LocalDate, endDate: LocalDate): List<LocalDate> {
+    val first = if (startDate.isBefore(endDate)) startDate else endDate
+    val last = if (startDate.isBefore(endDate)) endDate else startDate
+    val dates = mutableListOf<LocalDate>()
+    var cursor = first
+    while (!cursor.isAfter(last) && dates.size <= MAX_DEMO_DAYS) {
+        dates += cursor
+        cursor = cursor.plusDays(1)
+    }
+    return dates
+}
+
+private fun buildDemoDrafts(
+    dates: List<LocalDate>,
+    preset: DemoPreset,
+    manualMood: Int,
+    manualEnergy: Int,
+    manualAnxiety: Int,
+    manualStress: Int,
+    manualSleep: Int,
+    tags: Set<String>,
+): List<DraftEntry> = dates.mapIndexed { index, date ->
+    val values = when (preset) {
+        DemoPreset.SleepMoodPattern -> {
+            val sleepPattern = listOf(2, 2, 3, 4, 5, 4, 2)
+            val sleep = sleepPattern[index % sleepPattern.size]
+            DemoValues(
+                mood = when (sleep) {
+                    5 -> 5
+                    4 -> 4
+                    3 -> 3
+                    else -> 2
+                },
+                energy = when (sleep) {
+                    5 -> 5
+                    4 -> 4
+                    3 -> 3
+                    else -> 2
+                },
+                anxiety = when (sleep) {
+                    5 -> 1
+                    4 -> 2
+                    3 -> 3
+                    else -> 4
+                },
+                stress = when (sleep) {
+                    5 -> 1
+                    4 -> 2
+                    3 -> 3
+                    else -> 4
+                },
+                sleep = sleep,
+            )
+        }
+        DemoPreset.StressfulPeriod -> {
+            val stress = listOf(3, 4, 5, 5, 4, 3, 2)[index % 7]
+            DemoValues(
+                mood = (6 - stress).coerceIn(1, 5),
+                energy = (6 - stress).coerceIn(1, 5),
+                anxiety = stress,
+                stress = stress,
+                sleep = (6 - stress).coerceIn(1, 5),
+            )
+        }
+        DemoPreset.StableGood -> DemoValues(
+            mood = if (index % 5 == 0) 4 else 5,
+            energy = if (index % 4 == 0) 4 else 5,
+            anxiety = if (index % 6 == 0) 2 else 1,
+            stress = if (index % 4 == 0) 2 else 1,
+            sleep = if (index % 3 == 0) 4 else 5,
+        )
+        DemoPreset.Manual -> DemoValues(
+            mood = manualMood,
+            energy = manualEnergy,
+            anxiety = manualAnxiety,
+            stress = manualStress,
+            sleep = manualSleep,
+        )
+    }
+    DraftEntry(
+        date = date,
+        mood = values.mood,
+        energy = values.energy,
+        anxiety = values.anxiety,
+        stress = values.stress,
+        sleep = values.sleep,
+        tags = tags,
+    )
+}
+
+private data class DemoValues(
+    val mood: Int,
+    val energy: Int,
+    val anxiety: Int,
+    val stress: Int,
+    val sleep: Int,
+)
+
+private fun demoPresetLabel(preset: DemoPreset): String = when (preset) {
+    DemoPreset.SleepMoodPattern -> "Сон -> настроение"
+    DemoPreset.StressfulPeriod -> "Напряжённая неделя"
+    DemoPreset.StableGood -> "Хороший ритм"
+    DemoPreset.Manual -> "Вручную"
+}
+
+private fun demoPresetDescription(preset: DemoPreset): String = when (preset) {
+    DemoPreset.SleepMoodPattern ->
+        "Создаёт контраст: после плохого сна настроение, энергия и спокойствие ниже. Удобно для показа первого инсайта."
+    DemoPreset.StressfulPeriod ->
+        "Показывает период перегруза: выше стресс и тревожность, ниже сон, энергия и настроение."
+    DemoPreset.StableGood ->
+        "Заполняет спокойный стабильный период с хорошим сном и настроением."
+    DemoPreset.Manual ->
+        "Использует одинаковые значения шкал для всех выбранных дат."
+}
+
 private fun calculateInsight(entries: List<Entry>): Insight {
     val used = entries.sortedByDescending { it.date }.take(7).sortedBy { it.date }
     val count = used.size
@@ -1534,6 +2002,9 @@ private fun recordWord(n: Int): String {
 
 private fun formatDate(date: LocalDate): String =
     date.format(DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.forLanguageTag("ru")))
+
+private fun formatShortDate(date: LocalDate): String =
+    date.format(DateTimeFormatter.ofPattern("dd.MM.yyyy", Locale.forLanguageTag("ru")))
 
 @Preview(showBackground = true)
 @Composable
