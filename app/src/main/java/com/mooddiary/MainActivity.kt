@@ -13,6 +13,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -1506,12 +1507,40 @@ private fun ChartLegend() {
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun FeedbackRow(onFeedback: (String) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        Button(modifier = Modifier.weight(1f), onClick = { onFeedback("useful") }) { Text("Полезно") }
-        OutlinedButton(modifier = Modifier.weight(1f), onClick = { onFeedback("not_useful") }) { Text("Не полезно") }
-        TextButton(modifier = Modifier.weight(1f), onClick = { onFeedback("skipped") }) { Text("Пропустить") }
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        if (maxWidth < 420.dp) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(modifier = Modifier.fillMaxWidth(), onClick = { onFeedback("useful") }) {
+                    FeedbackButtonText("Полезно")
+                }
+                OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = { onFeedback("not_useful") }) {
+                    FeedbackButtonText("Не\u00A0полезно")
+                }
+                TextButton(modifier = Modifier.fillMaxWidth(), onClick = { onFeedback("skipped") }) {
+                    FeedbackButtonText("Пропустить")
+                }
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(modifier = Modifier.weight(1f), onClick = { onFeedback("useful") }) {
+                    FeedbackButtonText("Полезно")
+                }
+                OutlinedButton(modifier = Modifier.weight(1f), onClick = { onFeedback("not_useful") }) {
+                    FeedbackButtonText("Не\u00A0полезно")
+                }
+                TextButton(modifier = Modifier.weight(1f), onClick = { onFeedback("skipped") }) {
+                    FeedbackButtonText("Пропустить")
+                }
+            }
+        }
     }
+}
+
+@Composable
+private fun FeedbackButtonText(text: String) {
+    Text(text = text, maxLines = 1, softWrap = false, textAlign = TextAlign.Center)
 }
 
 @Composable
