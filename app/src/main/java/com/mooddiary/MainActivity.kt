@@ -980,9 +980,6 @@ private fun InsightScreen(
         ) {
             InfoCard(insight.message, icon = "✦", containerColor = MoodColors.InsightBlue)
             Text("Использовано записей: ${insight.entriesUsedCount}", color = MoodColors.Muted)
-            insight.confidenceLabel?.let {
-                Text("Уверенность: $it", color = MoodColors.Muted)
-            }
             insight.secondaryObservations.firstOrNull()?.let {
                 InfoCard(secondaryObservationText(it), icon = "＋", containerColor = MoodColors.SurfaceMuted)
             }
@@ -1057,7 +1054,7 @@ private fun SettingsScreen(
                 containerColor = MoodColors.InsightBlue,
             )
             InfoCard(
-                "P0 работает офлайн: записи, оценки инсайтов и счётчики статистики хранятся только на устройстве.",
+                "Приложение работает офлайн: записи, оценки инсайтов и счётчики статистики хранятся только на устройстве.",
                 icon = "✓",
                 containerColor = MoodColors.SurfaceMuted,
             )
@@ -1067,7 +1064,7 @@ private fun SettingsScreen(
                 }
             }
             Button(modifier = Modifier.fillMaxWidth(), onClick = onExport) {
-                Text("Экспорт статистики для команды")
+                Text("Экспорт статистики")
             }
             OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = { confirmDelete = true }) {
                 Text("Удалить все данные приложения")
@@ -1555,7 +1552,6 @@ private fun InsightCard(insight: Insight, onOpen: () -> Unit) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Инсайт", fontWeight = FontWeight.SemiBold)
                 Text(insightPreviewText(insight))
-                insight.confidenceLabel?.let { Text("Уверенность: $it", color = MoodColors.Muted, fontSize = 13.sp) }
                 Text("Посмотреть детали →", color = MoodColors.AccentDark, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
         }
