@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -35,14 +36,15 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,13 +53,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
@@ -201,12 +208,18 @@ private val Tags = listOf(
 )
 
 private object MoodColors {
-    val Background = Color(0xFFF8F7F3)
+    val Background = Color(0xFFFAF9FD)
     val Surface = Color(0xFFFFFFFF)
+    val SurfaceMuted = Color(0xFFF4F2F8)
     val Text = Color(0xFF22242A)
     val Muted = Color(0xFF666A73)
-    val Accent = Color(0xFF4F46E5)
-    val Recommendation = Color(0xFFF1E6D2)
+    val Border = Color(0xFFE5E2EB)
+    val Accent = Color(0xFF6963C7)
+    val AccentDark = Color(0xFF46408F)
+    val AccentSoft = Color(0xFFECEAFB)
+    val InsightBlue = Color(0xFFEAF4FF)
+    val Recommendation = Color(0xFFF3EEF9)
+    val Error = Color(0xFF8C4A62)
 
     val Mood = mapOf(
         5 to Color(0xFF8EB69B),
@@ -228,6 +241,9 @@ private object MoodColors {
     val Anxiety = Color(0xFFC0A8B8)
     val Stress = Color(0xFF9890C4)
 }
+
+private val AppCardShape = RoundedCornerShape(8.dp)
+private val PillShape = RoundedCornerShape(100.dp)
 
 private class LocalMoodStore(
     private val prefs: SharedPreferences,
@@ -558,7 +574,35 @@ private fun activeNavScreen(screen: Screen): Screen = when (screen) {
 
 @Composable
 private fun MoodDiaryTheme(content: @Composable () -> Unit) {
-    MaterialTheme {
+    val colorScheme = lightColorScheme(
+        primary = MoodColors.Accent,
+        onPrimary = Color.White,
+        primaryContainer = MoodColors.AccentSoft,
+        onPrimaryContainer = MoodColors.AccentDark,
+        secondary = MoodColors.Mood[4] ?: MoodColors.Accent,
+        onSecondary = MoodColors.Text,
+        secondaryContainer = MoodColors.InsightBlue,
+        onSecondaryContainer = MoodColors.Text,
+        background = MoodColors.Background,
+        onBackground = MoodColors.Text,
+        surface = MoodColors.Surface,
+        onSurface = MoodColors.Text,
+        surfaceVariant = MoodColors.SurfaceMuted,
+        onSurfaceVariant = MoodColors.Muted,
+        outline = MoodColors.Border,
+        error = MoodColors.Error,
+        onError = Color.White,
+    )
+    MaterialTheme(
+        colorScheme = colorScheme,
+        shapes = Shapes(
+            extraSmall = AppCardShape,
+            small = AppCardShape,
+            medium = AppCardShape,
+            large = AppCardShape,
+            extraLarge = AppCardShape,
+        ),
+    ) {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MoodColors.Background,
@@ -616,9 +660,17 @@ private fun OnboardingScreen(onStart: () -> Unit) {
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(20.dp))
-            InfoCard("Каждый день — пять быстрых оценок и несколько тегов контекста. Первые осторожные наблюдения появятся уже после 3–5 записей.")
+            InfoCard(
+                "Каждый день — пять быстрых оценок и несколько тегов контекста. Первые осторожные наблюдения появятся уже после 3–5 записей.",
+                icon = "i",
+                containerColor = MoodColors.InsightBlue,
+            )
             Spacer(Modifier.height(10.dp))
-            InfoCard("Это не диагноз и не замена специалиста. Данные хранятся только на устройстве, без регистрации и аналитики.")
+            InfoCard(
+                "Это не диагноз и не замена специалиста. Данные хранятся только на устройстве, без регистрации и аналитики.",
+                icon = "✓",
+                containerColor = MoodColors.SurfaceMuted,
+            )
         }
     }
 }
@@ -644,6 +696,8 @@ private fun HomeScreen(
             item {
                 Text("Mood Diary", fontSize = 30.sp, fontWeight = FontWeight.Bold)
                 Text("Сегодня ${formatDate(LocalDate.now())}", color = MoodColors.Muted)
+                Spacer(Modifier.height(10.dp))
+                MoodScaleStrip()
             }
             item {
                 Button(modifier = Modifier.fillMaxWidth(), onClick = onCheckIn) {
@@ -807,7 +861,7 @@ private fun CheckInScreen(
             if (saveError) {
                 Text(
                     "Не удалось сохранить запись. Проверьте свободное место и попробуйте снова.",
-                    color = Color(0xFFB3261E),
+                    color = MoodColors.Error,
                     fontSize = 14.sp,
                 )
             }
@@ -901,19 +955,34 @@ private fun InsightScreen(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            InfoCard(insight.message)
+            InfoCard(insight.message, icon = "✦", containerColor = MoodColors.InsightBlue)
             Text("Использовано записей: ${insight.entriesUsedCount}", color = MoodColors.Muted)
             insight.confidenceLabel?.let {
                 Text("Уверенность: $it", color = MoodColors.Muted)
             }
             insight.secondaryObservations.firstOrNull()?.let {
-                InfoCard(secondaryObservationText(it))
+                InfoCard(secondaryObservationText(it), icon = "＋", containerColor = MoodColors.SurfaceMuted)
             }
             recommendation?.let {
                 Card(colors = CardDefaults.cardColors(containerColor = MoodColors.Recommendation)) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Маленькое действие", fontWeight = FontWeight.SemiBold)
-                        Text(it)
+                    Row(
+                        Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.72f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("☾", color = MoodColors.AccentDark, fontSize = 20.sp)
+                        }
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Маленькое действие", fontWeight = FontWeight.SemiBold)
+                            Text(it)
+                        }
                     }
                 }
             }
@@ -959,8 +1028,16 @@ private fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text("Доверие и данные", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            InfoCard("Mood Diary не ставит диагнозы и не заменяет специалиста. Рекомендации — это бережные идеи для самонаблюдения.")
-            InfoCard("P0 работает офлайн: записи, оценки инсайтов и счётчики статистики хранятся только на устройстве.")
+            InfoCard(
+                "Mood Diary не ставит диагнозы и не заменяет специалиста. Рекомендации — это бережные идеи для самонаблюдения.",
+                icon = "i",
+                containerColor = MoodColors.InsightBlue,
+            )
+            InfoCard(
+                "P0 работает офлайн: записи, оценки инсайтов и счётчики статистики хранятся только на устройстве.",
+                icon = "✓",
+                containerColor = MoodColors.SurfaceMuted,
+            )
             if (showDemoDataTools) {
                 Button(modifier = Modifier.fillMaxWidth(), onClick = onDemoData) {
                     Text("Заполнить тестовые записи")
@@ -1045,7 +1122,11 @@ private fun DemoDataScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text("Заполнение для демонстрации", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            InfoCard("Создаёт локальные тестовые записи за выбранные даты. Если запись за дату уже есть, она будет заменена новыми тестовыми значениями.")
+            InfoCard(
+                "Создаёт локальные тестовые записи за выбранные даты. Если запись за дату уже есть, она будет заменена новыми тестовыми значениями.",
+                icon = "i",
+                containerColor = MoodColors.SurfaceMuted,
+            )
             DateRangePicker(
                 startDate = startDate,
                 endDate = endDate,
@@ -1165,7 +1246,7 @@ private fun DemoDataScreen(
             if (saveError) {
                 Text(
                     "Не удалось сохранить тестовые записи. Проверьте свободное место и попробуйте снова.",
-                    color = Color(0xFFB3261E),
+                    color = MoodColors.Error,
                     fontSize = 14.sp,
                 )
             }
@@ -1222,16 +1303,17 @@ private fun DateStepper(label: String, date: LocalDate, onChange: (LocalDate) ->
 
 @Composable
 private fun ChoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    val background = if (selected) Color(0xFFE8E7FF) else MoodColors.Surface
-    val border = if (selected) MoodColors.Accent else Color(0xFFD8D7D2)
+    val background = if (selected) MoodColors.AccentSoft else MoodColors.Surface
+    val border = if (selected) MoodColors.Accent else MoodColors.Border
     Text(
         text = label,
         modifier = Modifier
-            .clip(RoundedCornerShape(100.dp))
-            .border(1.dp, border, RoundedCornerShape(100.dp))
+            .clip(PillShape)
+            .border(1.dp, border, PillShape)
             .background(background)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
+        color = if (selected) MoodColors.AccentDark else MoodColors.Text,
         fontSize = 14.sp,
     )
 }
@@ -1268,9 +1350,9 @@ private fun DemoPreviewRow(draft: DraftEntry) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(formatShortDate(draft.date), modifier = Modifier.width(86.dp), fontSize = 13.sp)
-        Dot(MoodColors.Mood[draft.mood] ?: MoodColors.Accent)
+        ScaleCircle(ScaleKind.Mood, draft.mood ?: 3, size = 22.dp)
         Text("Н ${draft.mood}", fontSize = 13.sp)
-        Dot(MoodColors.Sleep[draft.sleep] ?: MoodColors.Accent)
+        ScaleCircle(ScaleKind.Sleep, draft.sleep ?: 3, size = 22.dp)
         Text("Сон ${draft.sleep}", fontSize = 13.sp)
         Text("Э ${draft.energy} / Тр ${draft.anxiety} / Ст ${draft.stress}", color = MoodColors.Muted, fontSize = 13.sp)
     }
@@ -1321,7 +1403,7 @@ private fun RatingRow(
                 val selectedModifier = if (selected == value) {
                     Modifier.border(2.dp, MoodColors.Accent, CircleShape)
                 } else {
-                    Modifier
+                    Modifier.border(1.dp, Color.White.copy(alpha = 0.74f), CircleShape)
                 }
                 Column(
                     modifier = Modifier.width(64.dp),
@@ -1330,14 +1412,19 @@ private fun RatingRow(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(if (selected == value) 48.dp else 42.dp)
+                            .size(48.dp)
                             .then(selectedModifier)
                             .clip(CircleShape)
-                            .background(color.copy(alpha = if (enabled) 0.34f else 0.12f))
+                            .background(color.copy(alpha = if (enabled) 0.64f else 0.12f))
                             .clickable(enabled = enabled) { onSelect(value) },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(option.icon, fontSize = 18.sp)
+                        ScaleGlyph(
+                            kind = kind,
+                            value = value,
+                            modifier = Modifier.size(31.dp),
+                            cutoutColor = color.copy(alpha = if (enabled) 0.64f else 0.12f),
+                        )
                     }
                     Text(
                         option.label,
@@ -1365,7 +1452,7 @@ private fun CarouselDots(activeStep: Int) {
                     .padding(horizontal = 4.dp)
                     .size(if (step == activeStep) 10.dp else 7.dp)
                     .clip(CircleShape)
-                    .background(if (step == activeStep) MoodColors.Accent else Color(0xFFD8D7D2)),
+                    .background(if (step == activeStep) MoodColors.Accent else MoodColors.Border),
             )
         }
     }
@@ -1373,16 +1460,17 @@ private fun CarouselDots(activeStep: Int) {
 
 @Composable
 private fun TagChip(tag: Tag, selected: Boolean, onToggle: () -> Unit) {
-    val background = if (selected) Color(0xFFE8E7FF) else MoodColors.Surface
-    val border = if (selected) MoodColors.Accent else Color(0xFFD8D7D2)
+    val background = if (selected) MoodColors.AccentSoft else MoodColors.Surface
+    val border = if (selected) MoodColors.Accent else MoodColors.Border
     Text(
         text = tag.label,
         modifier = Modifier
-            .clip(RoundedCornerShape(100.dp))
-            .border(1.dp, border, RoundedCornerShape(100.dp))
+            .clip(PillShape)
+            .border(1.dp, border, PillShape)
             .background(background)
             .clickable(onClick = onToggle)
             .padding(horizontal = 12.dp, vertical = 8.dp),
+        color = if (selected) MoodColors.AccentDark else MoodColors.Text,
         fontSize = 14.sp,
     )
 }
@@ -1425,83 +1513,251 @@ private fun InsightCard(insight: Insight, onOpen: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onOpen),
-        colors = CardDefaults.cardColors(containerColor = MoodColors.Surface),
+        colors = CardDefaults.cardColors(containerColor = MoodColors.InsightBlue),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Инсайт", fontWeight = FontWeight.SemiBold)
-            Text(insightPreviewText(insight))
-            insight.confidenceLabel?.let { Text("Уверенность: $it", color = MoodColors.Muted, fontSize = 13.sp) }
-        }
-    }
-}
-
-@Composable
-private fun MiniChart(entries: List<Entry>) {
-    val today = LocalDate.now()
-    val days = (6 downTo 0).map { today.minusDays(it.toLong()) }
-    val byDate = entries.associateBy { it.date }
-    Card(colors = CardDefaults.cardColors(containerColor = MoodColors.Surface)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Динамика за 7 дней", fontWeight = FontWeight.SemiBold)
-            if (entries.isEmpty()) {
-                Text("Сделайте первую запись, чтобы увидеть график.", color = MoodColors.Muted)
-            } else {
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp),
-                ) {
-                    val left = 8.dp.toPx()
-                    val right = size.width - 8.dp.toPx()
-                    val top = 12.dp.toPx()
-                    val bottom = size.height - 18.dp.toPx()
-                    (1..5).forEach { level ->
-                        val y = bottom - (level - 1) / 4f * (bottom - top)
-                        drawLine(Color(0xFFE6E2D9), Offset(left, y), Offset(right, y), strokeWidth = 1.dp.toPx())
-                    }
-                    fun drawSeries(values: List<Float?>, color: Color, stroke: Float, dash: FloatArray? = null) {
-                        val effect = dash?.let { PathEffect.dashPathEffect(it.map { v -> v.dp.toPx() }.toFloatArray()) }
-                        var previous: Offset? = null
-                        values.forEachIndexed { index, value ->
-                            val x = left + index / 6f * (right - left)
-                            if (value == null) {
-                                previous = null
-                            } else {
-                                val y = bottom - (value - 1f) / 4f * (bottom - top)
-                                val point = Offset(x, y)
-                                previous?.let {
-                                    drawLine(color, it, point, strokeWidth = stroke.dp.toPx(), cap = StrokeCap.Round, pathEffect = effect)
-                                }
-                                drawCircle(color, radius = max(3.dp.toPx(), stroke.dp.toPx()), center = point)
-                                previous = point
-                            }
-                        }
-                    }
-                    drawSeries(days.map { byDate[it]?.mood?.toFloat() }, MoodColors.Mood[5] ?: MoodColors.Accent, 2.5f)
-                    drawSeries(days.map { byDate[it]?.sleep?.toFloat() }, MoodColors.Sleep[4] ?: MoodColors.Accent, 2f, floatArrayOf(8f, 6f))
-                    drawSeries(days.map { byDate[it]?.energy?.toFloat() }, MoodColors.Energy, 1.5f)
-                    drawSeries(days.map { byDate[it]?.anxiety?.toFloat() }, MoodColors.Anxiety, 1.5f, floatArrayOf(2f, 5f))
-                    drawSeries(days.map { byDate[it]?.stress?.toFloat() }, MoodColors.Stress, 1.5f, floatArrayOf(8f, 4f, 2f, 4f))
-                }
-                ChartLegend()
+        Row(
+            Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.74f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("✦", color = MoodColors.Accent, fontSize = 21.sp)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Инсайт", fontWeight = FontWeight.SemiBold)
+                Text(insightPreviewText(insight))
+                insight.confidenceLabel?.let { Text("Уверенность: $it", color = MoodColors.Muted, fontSize = 13.sp) }
+                Text("Посмотреть детали →", color = MoodColors.AccentDark, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }
 }
 
 @Composable
-@OptIn(ExperimentalLayoutApi::class)
-private fun ChartLegend() {
-    val items = listOf(
-        "● настроение" to (MoodColors.Mood[5] ?: MoodColors.Accent),
-        "– – сон" to (MoodColors.Sleep[4] ?: MoodColors.Accent),
-        "● энергия" to MoodColors.Energy,
-        ". . тревожность" to MoodColors.Anxiety,
-        "-· стресс" to MoodColors.Stress,
+private fun MoodScaleStrip() {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        (5 downTo 1).forEach { value ->
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(MoodColors.Mood[value] ?: MoodColors.Accent),
+                contentAlignment = Alignment.Center,
+            ) {
+                MoodFaceGlyph(value = value, modifier = Modifier.size(14.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun MiniChart(entries: List<Entry>) {
+    var selectedRangeDays by remember { mutableStateOf(7) }
+    val today = LocalDate.now()
+    val days = (selectedRangeDays - 1 downTo 0).map { today.minusDays(it.toLong()) }
+    val byDate = entries.associateBy { it.date }
+    Card(colors = CardDefaults.cardColors(containerColor = MoodColors.Surface)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Статистика", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                Text("$selectedRangeDays дней", color = MoodColors.Muted, fontSize = 13.sp)
+            }
+            SegmentedRangeHeader(
+                selectedDays = selectedRangeDays,
+                onSelect = { selectedRangeDays = it },
+            )
+            if (entries.isEmpty()) {
+                Text("Сделайте первую запись, чтобы увидеть график.", color = MoodColors.Muted)
+            } else {
+                MetricChartSection(
+                    title = "Настроение",
+                    kind = ScaleKind.Mood,
+                    days = days,
+                    values = days.map { byDate[it]?.mood },
+                )
+                MetricChartSection(
+                    title = "Сон",
+                    kind = ScaleKind.Sleep,
+                    days = days,
+                    values = days.map { byDate[it]?.sleep },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SegmentedRangeHeader(selectedDays: Int, onSelect: (Int) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(AppCardShape)
+            .border(1.dp, MoodColors.Border, AppCardShape)
+            .background(MoodColors.Surface),
+    ) {
+        RangeSegment(label = "7 дней", value = 7, selectedDays = selectedDays, onSelect = onSelect)
+        RangeSegment(label = "14 дней", value = 14, selectedDays = selectedDays, onSelect = onSelect)
+    }
+}
+
+@Composable
+private fun RowScope.RangeSegment(
+    label: String,
+    value: Int,
+    selectedDays: Int,
+    onSelect: (Int) -> Unit,
+) {
+    val selected = selectedDays == value
+    Text(
+        text = label,
+        modifier = Modifier
+            .weight(1f)
+            .clip(AppCardShape)
+            .background(if (selected) MoodColors.AccentSoft else Color.Transparent)
+            .clickable { onSelect(value) }
+            .padding(vertical = 9.dp),
+        color = if (selected) MoodColors.AccentDark else MoodColors.Muted,
+        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        textAlign = TextAlign.Center,
+        fontSize = 13.sp,
     )
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        items.forEach { (label, color) ->
-            Text(label, color = color, fontSize = 12.sp)
+}
+
+@Composable
+private fun MetricChartSection(
+    title: String,
+    kind: ScaleKind,
+    days: List<LocalDate>,
+    values: List<Int?>,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ChartAxisIcons(kind = kind)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                MetricLineChart(kind = kind, values = values)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    days.forEach { day ->
+                        Text(
+                            day.dayOfMonth.toString(),
+                            modifier = Modifier.width(22.dp),
+                            color = MoodColors.Muted,
+                            fontSize = 10.sp,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChartAxisIcons(kind: ScaleKind) {
+    Column(
+        modifier = Modifier
+            .height(120.dp)
+            .width(22.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        (5 downTo 1).forEach { value ->
+            ScaleCircle(kind = kind, value = value, size = 18.dp)
+        }
+    }
+}
+
+@Composable
+private fun MetricLineChart(kind: ScaleKind, values: List<Int?>) {
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(120.dp),
+    ) {
+        val left = 6.dp.toPx()
+        val right = size.width - 6.dp.toPx()
+        val top = 8.dp.toPx()
+        val bottom = size.height - 8.dp.toPx()
+        val chartHeight = bottom - top
+        val chartWidth = right - left
+        val lineColor = when (kind) {
+            ScaleKind.Mood -> MoodColors.Mood[5] ?: MoodColors.Accent
+            ScaleKind.Sleep -> MoodColors.Sleep[4] ?: MoodColors.Accent
+            else -> scaleColor(kind, 4)
+        }
+
+        (1..5).forEach { level ->
+            val y = bottom - (level - 1) / 4f * chartHeight
+            drawLine(
+                color = MoodColors.Border.copy(alpha = 0.72f),
+                start = Offset(left, y),
+                end = Offset(right, y),
+                strokeWidth = 1.dp.toPx(),
+            )
+        }
+
+        val points = values.mapIndexedNotNull { index, value ->
+            value?.let {
+                val x = left + index / (values.size - 1).toFloat() * chartWidth
+                val y = bottom - (it - 1) / 4f * chartHeight
+                Offset(x, y) to it
+            }
+        }
+
+        if (points.size >= 2) {
+            val fill = Path().apply {
+                moveTo(points.first().first.x, bottom)
+                points.forEach { (point, _) -> lineTo(point.x, point.y) }
+                lineTo(points.last().first.x, bottom)
+                close()
+            }
+            drawPath(fill, color = lineColor.copy(alpha = if (kind == ScaleKind.Sleep) 0.10f else 0.06f))
+        }
+
+        var previous: Offset? = null
+        values.forEachIndexed { index, value ->
+            if (value == null) {
+                previous = null
+            } else {
+                val point = Offset(
+                    x = left + index / (values.size - 1).toFloat() * chartWidth,
+                    y = bottom - (value - 1) / 4f * chartHeight,
+                )
+                previous?.let {
+                    drawLine(
+                        color = lineColor,
+                        start = it,
+                        end = point,
+                        strokeWidth = 2.4.dp.toPx(),
+                        cap = StrokeCap.Round,
+                    )
+                }
+                drawCircle(
+                    color = scaleColor(kind, value),
+                    radius = 4.2.dp.toPx(),
+                    center = point,
+                )
+                drawCircle(
+                    color = Color.White,
+                    radius = 2.dp.toPx(),
+                    center = point,
+                )
+                previous = point
+            }
         }
     }
 }
@@ -1549,15 +1805,15 @@ private fun HistoryItem(entry: Entry, selected: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = if (selected) Color(0xFFF0F0FF) else MoodColors.Surface),
+        colors = CardDefaults.cardColors(containerColor = if (selected) MoodColors.AccentSoft else MoodColors.Surface),
     ) {
         Row(
             modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Dot(MoodColors.Mood[entry.mood] ?: MoodColors.Accent)
-            Dot(MoodColors.Sleep[entry.sleep] ?: MoodColors.Accent)
+            ScaleCircle(ScaleKind.Mood, entry.mood, size = 30.dp)
+            ScaleCircle(ScaleKind.Sleep, entry.sleep, size = 30.dp)
             Column(Modifier.weight(1f)) {
                 Text(formatDate(entry.date), fontWeight = FontWeight.SemiBold)
                 Text(
@@ -1608,18 +1864,21 @@ private fun BottomNav(
         ) {
             BottomNavItem(
                 icon = "⌂",
+                label = "Сегодня",
                 selected = activeScreen == Screen.Home,
                 onClick = onHome,
                 modifier = Modifier.weight(1f),
             )
             BottomNavItem(
-                icon = "◷",
+                icon = "▤",
+                label = "История",
                 selected = activeScreen == Screen.History,
                 onClick = onHistory,
                 modifier = Modifier.weight(1f),
             )
             BottomNavItem(
                 icon = "⚙",
+                label = "Данные",
                 selected = activeScreen == Screen.Settings,
                 onClick = onSettings,
                 modifier = Modifier.weight(1f),
@@ -1631,18 +1890,24 @@ private fun BottomNav(
 @Composable
 private fun BottomNavItem(
     icon: String,
+    label: String,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (selected) {
-        Button(modifier = modifier, onClick = onClick) {
-            Text(icon, fontSize = 22.sp)
-        }
-    } else {
-        TextButton(modifier = modifier, onClick = onClick) {
-            Text(icon, fontSize = 22.sp, color = MoodColors.Muted)
-        }
+    val contentColor = if (selected) MoodColors.AccentDark else MoodColors.Muted
+    Column(
+        modifier = modifier
+            .height(54.dp)
+            .clip(AppCardShape)
+            .background(if (selected) MoodColors.AccentSoft else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(icon, fontSize = 20.sp, color = contentColor, lineHeight = 20.sp)
+        Text(label, fontSize = 11.sp, color = contentColor, maxLines = 1)
     }
 }
 
@@ -1662,20 +1927,225 @@ private fun TopBar(title: String, onBack: () -> Unit) {
 }
 
 @Composable
-private fun InfoCard(text: String) {
-    Card(colors = CardDefaults.cardColors(containerColor = MoodColors.Surface)) {
-        Text(text, modifier = Modifier.padding(16.dp), lineHeight = 22.sp)
+private fun InfoCard(
+    text: String,
+    icon: String? = null,
+    containerColor: Color = MoodColors.Surface,
+) {
+    Card(colors = CardDefaults.cardColors(containerColor = containerColor)) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            icon?.let {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(MoodColors.AccentSoft),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(it, color = MoodColors.AccentDark, fontSize = 18.sp)
+                }
+            }
+            Text(
+                text,
+                modifier = Modifier.weight(1f),
+                color = MoodColors.Text,
+                lineHeight = 22.sp,
+            )
+        }
     }
 }
 
 @Composable
-private fun Dot(color: Color) {
+private fun ScaleCircle(kind: ScaleKind, value: Int, size: Dp = 30.dp) {
     Box(
         modifier = Modifier
-            .size(10.dp)
+            .size(size)
             .clip(CircleShape)
-            .background(color),
+            .background(scaleColor(kind, value)),
+        contentAlignment = Alignment.Center,
+    ) {
+        ScaleGlyph(
+            kind = kind,
+            value = value,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(if (size < 26.dp) 4.dp else 6.dp),
+        )
+    }
+}
+
+@Composable
+private fun ScaleGlyph(
+    kind: ScaleKind,
+    value: Int,
+    modifier: Modifier = Modifier,
+    cutoutColor: Color = scaleColor(kind, value),
+) {
+    when (kind) {
+        ScaleKind.Mood -> MoodFaceGlyph(value = value, modifier = modifier)
+        ScaleKind.Sleep -> SleepGlyph(value = value, modifier = modifier, cutoutColor = cutoutColor)
+        else -> Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            Text(scaleOption(kind, value).icon, fontSize = 16.sp, textAlign = TextAlign.Center)
+        }
+    }
+}
+
+@Composable
+private fun MoodFaceGlyph(value: Int, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val ink = Color(0xFF38404C).copy(alpha = 0.88f)
+        val stroke = size.minDimension * 0.07f
+        val eyeRadius = size.minDimension * 0.045f
+        val leftEye = Offset(size.width * 0.34f, size.height * 0.36f)
+        val rightEye = Offset(size.width * 0.66f, size.height * 0.36f)
+
+        if (value == 2) {
+            drawArc(
+                color = ink,
+                startAngle = 200f,
+                sweepAngle = 140f,
+                useCenter = false,
+                topLeft = Offset(size.width * 0.25f, size.height * 0.28f),
+                size = Size(size.width * 0.18f, size.height * 0.18f),
+                style = Stroke(width = stroke, cap = StrokeCap.Round),
+            )
+            drawArc(
+                color = ink,
+                startAngle = 200f,
+                sweepAngle = 140f,
+                useCenter = false,
+                topLeft = Offset(size.width * 0.57f, size.height * 0.28f),
+                size = Size(size.width * 0.18f, size.height * 0.18f),
+                style = Stroke(width = stroke, cap = StrokeCap.Round),
+            )
+        } else {
+            drawCircle(ink, radius = eyeRadius, center = leftEye)
+            drawCircle(ink, radius = eyeRadius, center = rightEye)
+        }
+
+        when (value) {
+            5 -> drawMoodArc(ink, stroke, top = 0.44f, start = 18f, sweep = 144f)
+            4 -> drawMoodArc(ink, stroke, top = 0.47f, start = 28f, sweep = 124f)
+            3 -> drawLine(
+                color = ink,
+                start = Offset(size.width * 0.38f, size.height * 0.64f),
+                end = Offset(size.width * 0.62f, size.height * 0.64f),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round,
+            )
+            2 -> drawLine(
+                color = ink,
+                start = Offset(size.width * 0.42f, size.height * 0.62f),
+                end = Offset(size.width * 0.58f, size.height * 0.62f),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round,
+            )
+            else -> drawMoodArc(ink, stroke, top = 0.58f, start = 198f, sweep = 144f)
+        }
+    }
+}
+
+private fun DrawScope.drawMoodArc(color: Color, stroke: Float, top: Float, start: Float, sweep: Float) {
+    drawArc(
+        color = color,
+        startAngle = start,
+        sweepAngle = sweep,
+        useCenter = false,
+        topLeft = Offset(size.width * 0.32f, size.height * top),
+        size = Size(size.width * 0.36f, size.height * 0.24f),
+        style = Stroke(width = stroke, cap = StrokeCap.Round),
     )
+}
+
+@Composable
+private fun SleepGlyph(
+    value: Int,
+    modifier: Modifier = Modifier,
+    cutoutColor: Color = scaleColor(ScaleKind.Sleep, value),
+) {
+    Canvas(modifier = modifier) {
+        when (value) {
+            5 -> drawSunGlyph()
+            4,
+            3 -> drawCloudGlyph()
+            2 -> drawMoonGlyph(cutoutColor, withStars = false)
+            else -> drawMoonGlyph(cutoutColor, withStars = true)
+        }
+    }
+}
+
+private fun DrawScope.drawSunGlyph() {
+    val white = Color.White.copy(alpha = 0.94f)
+    val center = Offset(size.width * 0.5f, size.height * 0.5f)
+    val radius = size.minDimension * 0.17f
+    drawCircle(white, radius = radius, center = center)
+    val inner = size.minDimension * 0.31f
+    val outer = size.minDimension * 0.41f
+    val stroke = size.minDimension * 0.055f
+    listOf(0f, 45f, 90f, 135f, 180f, 225f, 270f, 315f).forEach { angle ->
+        val radians = Math.toRadians(angle.toDouble())
+        val start = Offset(
+            x = center.x + kotlin.math.cos(radians).toFloat() * inner,
+            y = center.y + kotlin.math.sin(radians).toFloat() * inner,
+        )
+        val end = Offset(
+            x = center.x + kotlin.math.cos(radians).toFloat() * outer,
+            y = center.y + kotlin.math.sin(radians).toFloat() * outer,
+        )
+        drawLine(white, start, end, strokeWidth = stroke, cap = StrokeCap.Round)
+    }
+}
+
+private fun DrawScope.drawCloudGlyph() {
+    val white = Color.White.copy(alpha = 0.94f)
+    drawRoundRect(
+        color = white,
+        topLeft = Offset(size.width * 0.24f, size.height * 0.51f),
+        size = Size(size.width * 0.52f, size.height * 0.20f),
+        cornerRadius = CornerRadius(size.minDimension * 0.10f, size.minDimension * 0.10f),
+    )
+    drawCircle(white, radius = size.minDimension * 0.15f, center = Offset(size.width * 0.39f, size.height * 0.51f))
+    drawCircle(white, radius = size.minDimension * 0.19f, center = Offset(size.width * 0.55f, size.height * 0.46f))
+    drawCircle(white, radius = size.minDimension * 0.13f, center = Offset(size.width * 0.68f, size.height * 0.53f))
+}
+
+private fun DrawScope.drawMoonGlyph(cutoutColor: Color, withStars: Boolean) {
+    val white = Color.White.copy(alpha = 0.95f)
+    drawCircle(white, radius = size.minDimension * 0.31f, center = Offset(size.width * 0.48f, size.height * 0.47f))
+    drawCircle(cutoutColor, radius = size.minDimension * 0.30f, center = Offset(size.width * 0.61f, size.height * 0.39f))
+    if (withStars) {
+        drawStar(center = Offset(size.width * 0.77f, size.height * 0.31f), radius = size.minDimension * 0.08f, color = white)
+        drawStar(center = Offset(size.width * 0.73f, size.height * 0.68f), radius = size.minDimension * 0.055f, color = white)
+    }
+}
+
+private fun DrawScope.drawStar(center: Offset, radius: Float, color: Color) {
+    drawLine(
+        color = color,
+        start = Offset(center.x - radius, center.y),
+        end = Offset(center.x + radius, center.y),
+        strokeWidth = radius * 0.28f,
+        cap = StrokeCap.Round,
+    )
+    drawLine(
+        color = color,
+        start = Offset(center.x, center.y - radius),
+        end = Offset(center.x, center.y + radius),
+        strokeWidth = radius * 0.28f,
+        cap = StrokeCap.Round,
+    )
+}
+
+private fun scaleColor(kind: ScaleKind, value: Int): Color = when (kind) {
+    ScaleKind.Mood -> MoodColors.Mood[value] ?: MoodColors.Accent
+    ScaleKind.Sleep -> MoodColors.Sleep[value] ?: MoodColors.Accent
+    ScaleKind.Energy -> MoodColors.Energy
+    ScaleKind.Anxiety -> MoodColors.Anxiety
+    ScaleKind.Stress -> MoodColors.Stress
 }
 
 @Composable
@@ -1974,11 +2444,11 @@ private fun List<Entry>.averageOf(selector: (Entry) -> Int): Double = map(select
 
 private fun scaleOption(kind: ScaleKind, value: Int): ScaleOption = when (kind) {
     ScaleKind.Mood -> when (value) {
-        5 -> ScaleOption("😄", "отличное")
-        4 -> ScaleOption("🙂", "хорошее")
-        3 -> ScaleOption("😐", "ровное")
-        2 -> ScaleOption("🙁", "грустное")
-        else -> ScaleOption("😣", "тяжёлое")
+        5 -> ScaleOption("☺", "очень хорошо")
+        4 -> ScaleOption("◡", "хорошо")
+        3 -> ScaleOption("–", "спокойно")
+        2 -> ScaleOption("⌣", "низкий ресурс")
+        else -> ScaleOption("⌢", "тяжёлый день")
     }
     ScaleKind.Energy -> when (value) {
         5 -> ScaleOption("⚡", "заряд")
@@ -2002,15 +2472,17 @@ private fun scaleOption(kind: ScaleKind, value: Int): ScaleOption = when (kind) 
         else -> ScaleOption("☕", "мягко")
     }
     ScaleKind.Sleep -> when (value) {
-        5 -> ScaleOption("🌕", "отличный")
-        4 -> ScaleOption("🌖", "хороший")
-        3 -> ScaleOption("🌗", "обычный")
-        2 -> ScaleOption("🌘", "плохой")
-        else -> ScaleOption("🌑", "очень плохой")
+        5 -> ScaleOption("☼", "отличный сон")
+        4 -> ScaleOption("☁", "хороший сон")
+        3 -> ScaleOption("☁", "средний сон")
+        2 -> ScaleOption("☾", "поверхностный")
+        else -> ScaleOption("☽", "очень плохой")
     }
 }
 
 private fun valuesForScale(kind: ScaleKind): IntProgression = when (kind) {
+    ScaleKind.Mood,
+    ScaleKind.Sleep,
     ScaleKind.Anxiety,
     ScaleKind.Stress -> 5 downTo 1
     else -> 1..5
