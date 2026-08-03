@@ -122,8 +122,18 @@ private enum class InsightStatus {
 
 private enum class InsightSubtype {
     Contrast,
+    SleepAnxiety,
+    SleepEnergy,
+    StressEnergy,
+    StressMood,
+    AnxietyStress,
     StableLow,
     StableHigh,
+    HighStress,
+    HighAnxiety,
+    LowEnergy,
+    TagPositive,
+    TagPressure,
     NoPolarity,
     NoCorrelation,
     Intermediate,
@@ -173,6 +183,12 @@ private data class Insight(
     val confidenceLabel: String?,
     val entriesUsedCount: Int,
     val secondaryObservations: List<SecondaryObservation> = emptyList(),
+)
+
+private data class InsightCandidate(
+    val insight: Insight,
+    val priority: Int,
+    val score: Double,
 )
 
 private data class DraftEntry(
@@ -2704,58 +2720,206 @@ private fun calculateInsight(entries: List<Entry>): Insight {
         return Insight(
             status = InsightStatus.NotEnoughData,
             subtype = null,
-            message = "Пока данных мало. Ещё $left ${recordWord(left)} — и можно будет проверить связь сна и настроения.",
+            message = "Нужно ещё $left ${recordWord(left)}, чтобы появилось первое наблюдение о сне и настроении.",
             confidenceLabel = null,
             entriesUsedCount = count,
         )
     }
 
+    val candidates = mutableListOf<InsightCandidate>()
     val lowSleep = used.filter { it.sleep <= 2 }
     val highSleep = used.filter { it.sleep >= 4 }
-    val contrastFound = lowSleep.isNotEmpty() && highSleep.isNotEmpty() &&
-        highSleep.averageOf { it.mood } - lowSleep.averageOf { it.mood } >= 1.0 &&
-        (count >= 5 || (lowSleep.all { it.mood <= 3 } && highSleep.all { it.mood >= 3 }))
+    val lowStress = used.filter { it.stress <= 2 }
+    val highStress = used.filter { it.stress >= 4 }
+    val highAnxiety = used.filter { it.anxiety >= 4 }
 
-    if (contrastFound) {
-        return Insight(
-            status = InsightStatus.Found,
-            subtype = InsightSubtype.Contrast,
-            message = "В твоих последних записях прослеживается паттерн: в дни с лучшим сном настроение было заметно выше. Это не доказывает причинно-следственную связь — но достаточно устойчиво, чтобы понаблюдать за ним осознанно. Не диагноз — просто интересная закономерность.",
-            confidenceLabel = if (count >= 5) "средняя" else "низкая",
-            entriesUsedCount = count,
-            secondaryObservations = secondaryObservations(used, stableHigh = false),
+    if (lowSleep.isNotEmpty() && highSleep.isNotEmpty()) {
+        val moodDelta = highSleep.averageOf { it.mood } - lowSleep.averageOf { it.mood }
+        val sleepMoodFound = moodDelta >= 1.0 &&
+            (count >= 5 || (lowSleep.all { it.mood <= 3 } && highSleep.all { it.mood >= 3 }))
+        if (sleepMoodFound) {
+            candidates += InsightCandidate(
+                insight = Insight(
+                    status = InsightStatus.Found,
+                    subtype = InsightSubtype.Contrast,
+                    message = "Когда сон был лучше, настроение у тебя чаще было выше. Пока это не причина и следствие, а повторяющийся сигнал, который стоит проверить дальше.",
+                    confidenceLabel = if (count >= 5) "средняя" else "низкая",
+                    entriesUsedCount = count,
+                    secondaryObservations = secondaryObservations(used, stableHigh = false),
+                ),
+                priority = 100,
+                score = moodDelta,
+            )
+        }
+
+        val anxietyDelta = lowSleep.averageOf { it.anxiety } - highSleep.averageOf { it.anxiety }
+        if (anxietyDelta >= 1.0) {
+            candidates += InsightCandidate(
+                insight = Insight(
+                    status = InsightStatus.Found,
+                    subtype = InsightSubtype.SleepAnxiety,
+                    message = "Когда сон был лучше, тревожность у тебя чаще была ниже. Возможно, сон сейчас помогает создавать более спокойный фон.",
+                    confidenceLabel = if (count >= 5) "средняя" else "низкая",
+                    entriesUsedCount = count,
+                    secondaryObservations = secondaryObservations(used, stableHigh = false),
+                ),
+                priority = 92,
+                score = anxietyDelta,
+            )
+        }
+
+        val energyDelta = highSleep.averageOf { it.energy } - lowSleep.averageOf { it.energy }
+        if (energyDelta >= 1.0) {
+            candidates += InsightCandidate(
+                insight = Insight(
+                    status = InsightStatus.Found,
+                    subtype = InsightSubtype.SleepEnergy,
+                    message = "Когда сон был лучше, энергии у тебя чаще было больше. Похоже, сон сейчас может быть одним из главных источников твоего ресурса.",
+                    confidenceLabel = if (count >= 5) "средняя" else "низкая",
+                    entriesUsedCount = count,
+                    secondaryObservations = secondaryObservations(used, stableHigh = false),
+                ),
+                priority = 90,
+                score = energyDelta,
+            )
+        }
+    }
+
+    if (lowStress.isNotEmpty() && highStress.isNotEmpty()) {
+        val energyDelta = lowStress.averageOf { it.energy } - highStress.averageOf { it.energy }
+        if (energyDelta >= 1.0) {
+            candidates += InsightCandidate(
+                insight = Insight(
+                    status = InsightStatus.Found,
+                    subtype = InsightSubtype.StressEnergy,
+                    message = "В более стрессовые дни у тебя оставалось меньше энергии. Похоже, текущая нагрузка забирает заметную часть ресурса.",
+                    confidenceLabel = if (count >= 5) "средняя" else "низкая",
+                    entriesUsedCount = count,
+                ),
+                priority = 86,
+                score = energyDelta,
+            )
+        }
+
+        val moodDelta = lowStress.averageOf { it.mood } - highStress.averageOf { it.mood }
+        if (moodDelta >= 1.0) {
+            candidates += InsightCandidate(
+                insight = Insight(
+                    status = InsightStatus.Found,
+                    subtype = InsightSubtype.StressMood,
+                    message = "Когда день был более стрессовым, настроение чаще снижалось. Похоже, нагрузка сейчас влияет не только на силы, но и на общий эмоциональный фон.",
+                    confidenceLabel = if (count >= 5) "средняя" else "низкая",
+                    entriesUsedCount = count,
+                ),
+                priority = 84,
+                score = moodDelta,
+            )
+        }
+
+        val anxietyDelta = highStress.averageOf { it.anxiety } - lowStress.averageOf { it.anxiety }
+        if (anxietyDelta >= 1.0) {
+            candidates += InsightCandidate(
+                insight = Insight(
+                    status = InsightStatus.Found,
+                    subtype = InsightSubtype.AnxietyStress,
+                    message = "Стресс и тревожность у тебя часто усиливались одновременно. Возможно, их запускают одни и те же ситуации — следующие записи помогут это проверить.",
+                    confidenceLabel = if (count >= 5) "средняя" else "низкая",
+                    entriesUsedCount = count,
+                ),
+                priority = 82,
+                score = anxietyDelta,
+            )
+        }
+    }
+
+    val stableLowSleep = highSleep.isEmpty() && lowSleep.size > count / 2.0
+    if (stableLowSleep) {
+        candidates += InsightCandidate(
+            insight = Insight(
+                status = InsightStatus.Found,
+                subtype = InsightSubtype.StableLow,
+                message = "В большинстве последних записей сон был низким. Даже без явной связи с настроением это важный фон, который может отражаться на энергии и самочувствии.",
+                confidenceLabel = "низкая",
+                entriesUsedCount = count,
+                secondaryObservations = secondaryObservations(used, stableHigh = false),
+            ),
+            priority = 80,
+            score = lowSleep.size.toDouble(),
         )
     }
 
-    val stableLow = highSleep.isEmpty() && lowSleep.size > count / 2.0
-    if (stableLow) {
-        return Insight(
-            status = InsightStatus.Found,
-            subtype = InsightSubtype.StableLow,
-            message = "Сон в последних записях стабильно низкий. Сравнить его с чем-то другим пока сложно — но стабильно низкий сон сам по себе фактор, который часто влияет на самочувствие в течение дня. Это не диагноз — просто наблюдение, которое стоит держать в голове.",
-            confidenceLabel = "низкая",
-            entriesUsedCount = count,
-            secondaryObservations = secondaryObservations(used, stableHigh = false),
+    if (used.averageOf { it.stress } >= 3.6 && highStress.size >= 2) {
+        candidates += InsightCandidate(
+            insight = Insight(
+                status = InsightStatus.Found,
+                subtype = InsightSubtype.HighStress,
+                message = "В нескольких последних записях стресс был высоким. Это похоже не на один тяжёлый день, а на период повышенной нагрузки.",
+                confidenceLabel = "низкая",
+                entriesUsedCount = count,
+                secondaryObservations = secondaryObservations(used, stableHigh = false),
+            ),
+            priority = 74,
+            score = used.averageOf { it.stress },
         )
     }
+
+    if (used.averageOf { it.anxiety } >= 3.6 && highAnxiety.size >= 2) {
+        candidates += InsightCandidate(
+            insight = Insight(
+                status = InsightStatus.Found,
+                subtype = InsightSubtype.HighAnxiety,
+                message = "В нескольких последних записях тревожность была высокой. Это не описывает твоё состояние целиком, но показывает, что напряжённый фон повторяется.",
+                confidenceLabel = "низкая",
+                entriesUsedCount = count,
+                secondaryObservations = secondaryObservations(used, stableHigh = false),
+            ),
+            priority = 72,
+            score = used.averageOf { it.anxiety },
+        )
+    }
+
+    if (used.averageOf { it.energy } <= 2.4 && used.count { it.energy <= 2 } >= 2) {
+        candidates += InsightCandidate(
+            insight = Insight(
+                status = InsightStatus.Found,
+                subtype = InsightSubtype.LowEnergy,
+                message = "В последних записях энергии часто не хватало. Даже при ровном настроении это важно заметить: сейчас ресурса на повседневные дела может быть меньше.",
+                confidenceLabel = "низкая",
+                entriesUsedCount = count,
+                secondaryObservations = secondaryObservations(used, stableHigh = false),
+            ),
+            priority = 70,
+            score = 5.0 - used.averageOf { it.energy },
+        )
+    }
+
+    tagInsightCandidate(used, count)?.let { candidates += it }
 
     val stableHigh = lowSleep.isEmpty() && highSleep.size > count / 2.0 && used.averageOf { it.mood } >= 3.5
     if (stableHigh) {
-        return Insight(
-            status = InsightStatus.Found,
-            subtype = InsightSubtype.StableHigh,
-            message = "Сон в последних записях стабильно хороший, и настроение держится уверенно. Значит, что-то в твоём нынешнем ритме работает. Стоит это замечать — и стараться сохранить, когда ритм будет под давлением.",
-            confidenceLabel = "низкая",
-            entriesUsedCount = count,
+        candidates += InsightCandidate(
+            insight = Insight(
+                status = InsightStatus.Found,
+                subtype = InsightSubtype.StableHigh,
+                message = "Сон и настроение у тебя держатся на хорошем уровне. Похоже, нынешний ритм тебе подходит — полезно заметить, что помогает его сохранять.",
+                confidenceLabel = "низкая",
+                entriesUsedCount = count,
+            ),
+            priority = 56,
+            score = used.averageOf { it.mood },
         )
     }
+
+    candidates.maxWithOrNull(
+        compareBy<InsightCandidate> { it.priority }.thenBy { it.score },
+    )?.let { return it.insight }
 
     if (count < 5) {
         val left = 5 - count
         return Insight(
             status = InsightStatus.Waiting,
             subtype = null,
-            message = "Уже есть первые записи. Чтобы не делать поспешный вывод, нужно ещё немного данных — ${if (left == 1) "осталась" else "осталось"} $left ${recordWord(left)} до 5.",
+            message = "Данные уже начинают складываться в картину. Ещё $left ${recordWord(left)} — и можно будет проверить, повторяется ли какой-то паттерн.",
             confidenceLabel = null,
             entriesUsedCount = count,
         )
@@ -2767,9 +2931,9 @@ private fun calculateInsight(entries: List<Entry>): Insight {
         else -> InsightSubtype.NoPolarity
     }
     val message = when (subtype) {
-        InsightSubtype.NoCorrelation -> "Сон менялся, но настроение в эти периоды двигалось независимо. Явной связи пока не видно — возможно, в этот промежуток больше влияли другие факторы. Это нормально."
-        InsightSubtype.NoPolarity -> "Сон в последних записях держался без выраженных контрастов — дней с заметно низким или заметно высоким сном пока недостаточно для сравнения. Продолжай отмечать — картина прояснится."
-        else -> "В последних записях устойчивого паттерна между сном и настроением не нашлось. Паттерны часто проявляются позже или при большем разбросе данных — продолжай наблюдения."
+        InsightSubtype.NoCorrelation -> "Сон менялся, но настроение пока не следовало за ним. Возможно, в эти дни сильнее влияли другие обстоятельства."
+        InsightSubtype.NoPolarity -> "Сон пока был примерно одинаковым, поэтому сравнить его влияние на настроение не получается. Когда появятся более разные дни, картина станет яснее."
+        else -> "Связь сна и настроения пока не складывается в устойчивый паттерн. Возможно, данных ещё мало или в эти дни важнее были другие факторы."
     }
     return Insight(
         status = InsightStatus.NoClearPattern,
@@ -2778,6 +2942,47 @@ private fun calculateInsight(entries: List<Entry>): Insight {
         confidenceLabel = null,
         entriesUsedCount = count,
         secondaryObservations = secondaryObservations(used, stableHigh = false),
+    )
+}
+
+private fun tagInsightCandidate(entries: List<Entry>, count: Int): InsightCandidate? {
+    if (entries.size < 5) return null
+    return Tags.mapNotNull { tag ->
+        val tagged = entries.filter { tag.id in it.tags }
+        val other = entries.filter { tag.id !in it.tags }
+        if (tagged.size < 2 || other.size < 2) return@mapNotNull null
+
+        val tagLabel = tag.label.lowercase(Locale.forLanguageTag("ru"))
+        val moodLift = tagged.averageOf { it.mood } - other.averageOf { it.mood }
+        val stressLift = tagged.averageOf { it.stress } - other.averageOf { it.stress }
+
+        when {
+            moodLift >= 1.0 -> InsightCandidate(
+                insight = Insight(
+                    status = InsightStatus.Found,
+                    subtype = InsightSubtype.TagPositive,
+                    message = "В дни с отметкой «$tagLabel» настроение у тебя чаще было выше. Похоже, этот контекст может тебя поддерживать — посмотрим, повторится ли это дальше.",
+                    confidenceLabel = "низкая",
+                    entriesUsedCount = count,
+                ),
+                priority = if (tag.category == "Восстановление" || tag.category == "Активность") 68 else 62,
+                score = moodLift,
+            )
+            stressLift >= 1.0 -> InsightCandidate(
+                insight = Insight(
+                    status = InsightStatus.Found,
+                    subtype = InsightSubtype.TagPressure,
+                    message = "В дни с отметкой «$tagLabel» стресс у тебя чаще был выше. Возможно, этот контекст требует больше сил, чем кажется в моменте.",
+                    confidenceLabel = "низкая",
+                    entriesUsedCount = count,
+                ),
+                priority = if (tag.category == "Нагрузка") 66 else 60,
+                score = stressLift,
+            )
+            else -> null
+        }
+    }.maxWithOrNull(
+        compareBy<InsightCandidate> { it.priority }.thenBy { it.score },
     )
 }
 
@@ -2814,11 +3019,31 @@ private fun secondaryObservations(entries: List<Entry>, stableHigh: Boolean): Li
 
 private fun recommendationFor(insight: Insight): String? = when (insight.status to insight.subtype) {
     InsightStatus.Found to InsightSubtype.Contrast ->
-        "Попробуй сегодня один небольшой шаг: лечь на 20 минут раньше — и завтра отметь, заметна ли разница в настроении."
+        "Сегодня попробуй лечь на 20 минут раньше обычного. Завтра отметь настроение и посмотри, повторится ли связь."
+    InsightStatus.Found to InsightSubtype.SleepAnxiety ->
+        "Сегодня отложи экран и рабочие чаты за 30 минут до сна. Завтра отметь тревожность и сравни её с предыдущими днями."
+    InsightStatus.Found to InsightSubtype.SleepEnergy ->
+        "Сегодня начни готовиться ко сну в заранее выбранное время. Завтра отметь, изменился ли уровень энергии."
+    InsightStatus.Found to InsightSubtype.StressEnergy ->
+        "Перенеси сегодня одну необязательную задачу. Вечером отметь, осталось ли у тебя больше энергии."
+    InsightStatus.Found to InsightSubtype.StressMood ->
+        "В следующей напряжённой записи выбери тег, который лучше всего описывает источник нагрузки. Это поможет увидеть, что повторяется."
+    InsightStatus.Found to InsightSubtype.AnxietyStress ->
+        "Когда стресс и тревожность снова поднимутся вместе, отметь главный контекст дня одним тегом. Так будет проще найти общий источник."
     InsightStatus.Found to InsightSubtype.StableLow ->
-        "Можно начать с одного маленького шага этим вечером: попробуй лечь на 15 минут раньше обычного — без давления на результат."
+        "Сегодня начни готовиться ко сну на 15 минут раньше обычного. Завтра просто отметь, как прошла ночь."
     InsightStatus.Found to InsightSubtype.StableHigh ->
-        "Отметь для себя, что сейчас работает хорошо — это поможет вернуться к этому ритму, если что-то изменится."
+        "Выбери один элемент нынешнего ритма, который хочешь сохранить завтра: время сна или спокойный вечерний ритуал."
+    InsightStatus.Found to InsightSubtype.HighStress ->
+        "Выбери одну задачу, которую сегодня можно перенести без серьёзных последствий, и освободи это время для отдыха."
+    InsightStatus.Found to InsightSubtype.HighAnxiety ->
+        "На минуту раздели мысли на две части: что известно точно и что пока остаётся предположением. Решать всё прямо сейчас не нужно."
+    InsightStatus.Found to InsightSubtype.LowEnergy ->
+        "Выбери сегодня один базовый способ восстановиться: нормально поесть, выпить воды, немного пройтись или лечь спать раньше."
+    InsightStatus.Found to InsightSubtype.TagPositive ->
+        "Создай в ближайшие дни ещё одну возможность для такого поддерживающего контекста и посмотри, повторится ли эффект."
+    InsightStatus.Found to InsightSubtype.TagPressure ->
+        "Перед следующим похожим днём заранее оставь 20 минут без задач на восстановление."
     else -> null
 }
 
